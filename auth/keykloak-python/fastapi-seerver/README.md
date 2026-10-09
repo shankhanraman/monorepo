@@ -7,6 +7,7 @@ Design docs:
 - [docs/architecture.md](docs/architecture.md): components, trust boundaries, key decisions, known gaps
 - [docs/datamodel.md](docs/datamodel.md): entities, tables and constraints, identity claims, migrations workflow
 - [docs/dataflow.md](docs/dataflow.md): login, request pipeline, refresh, key rotation, error reference
+- [docs/deployment.md](docs/deployment.md): production target: GitHub Actions CI/CD, secrets management, Kubernetes (not built yet)
 
 ## Setup (Windows)
 

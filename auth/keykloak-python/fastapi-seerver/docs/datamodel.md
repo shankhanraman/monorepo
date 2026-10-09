@@ -63,14 +63,14 @@ Each entity file in `app/models/` holds **one table class and two Pydantic class
 
 ```
 UserRow (SQLAlchemy table "users")        ← only services touch it
-UserCreate (input)  ──inherits──►  User (output) = UserCreate + id, from_attributes=True
+User (output)  ──inherits from──►  UserCreate (input)     User = UserCreate fields + id, from_attributes=True
 ProfileRow / ProfileCreate / Profile        (same pattern)
 ```
 
 Services convert rows to the output model (`User.model_validate(row)`), so **ORM objects never leave the service layer**. Routers and the API contract don't change if the table gains internal columns.
 
 - **`*Create`** is what the client may send, so a client **can't choose `id`**: extra fields are ignored (Pydantic's default `extra="ignore"`).
-- **The `*` read model** is what the API returns and stores. Routers declare it as `response_model`, so output is filtered through the schema even if the stored object later gains internal fields.
+- **The `*` read model** is what the API returns (the stored form is the `*Row` table class). Routers declare it as `response_model`, so output is filtered through the schema even if the stored object later gains internal fields.
 - Inheritance keeps the two in sync. The trade-off: once read and write fields differ (e.g. `password` on create only, `created_at` on read only), switch to a shared `*Base` plus separate `*Create`/`*Read`/`*Update` classes rather than piling on overrides.
 
 **Updates are full replacements** (`PUT`) that reuse the `*Create` model: the client sends every field. There's no `PATCH` and no `*Update` model with optional fields. Add them when a client needs to change one field without knowing the others.

@@ -121,7 +121,7 @@ flowchart TD
     C0 --> D["CORSMiddleware"]
     C --> D
     D --> E["Router match (path + method)"]
-    E --> P{"endpoint has<br/>dependencies=require_login?"}
+    E --> P{"endpoint depends on current_user?<br/>(require_login or Depends(current_user))"}
     P -- "no: GET list/read, /health" --> I
     P -- "yes: POST/PUT/DELETE, /me" --> F["HTTPBearer: header present?"]
     F -- no --> X1["401 Not authenticated"]
@@ -137,7 +137,9 @@ flowchart TD
 Implementation details that matter:
 
 - **Public endpoints ignore tokens.** A signed-in user's `GET /users/` carries a token, and the API doesn't look at it. A guest's request carries none and gets the same data.
-- **Order of checks:** dependencies run first, and an `HTTPException` there stops the request before body validation errors are reported. A write with both a bad token and a bad body gets **401, not 422** (verified on FastAPI 0.143), so unauthenticated callers learn nothing about the schema.
+- **Order of checks** (verified on FastAPI 0.143):
+  - **Malformed JSON** (not parseable at all) is rejected with **422 `json_invalid` before auth**, even without a token.
+  - A **well-formed body that fails the schema** plus a bad or missing token gets **401, not 422**: dependencies (auth) run before schema errors are reported, so unauthenticated callers learn nothing about the schema.
 - **Threading:** handlers and `current_user` are plain `def` and run in FastAPI's thread pool. The JWKS fetch and the SQL (psycopg) don't block the event loop. Each request gets its own DB session from the pool; Postgres identity columns and constraints keep concurrent writes consistent.
 - **Claims:** `require_login` verifies the token but discards the claims. `/me` declares `Depends(current_user)` to get them.
 - **Error text on the client:** [`apiFetch`](../../frontend/src/auth/apiFetch.ts) shows a string `detail` as-is and flattens a 422 list into `"<field>: <msg>, ..."`.
@@ -238,7 +240,10 @@ sequenceDiagram
 flowchart LR
     T["incoming JWT<br/>header.kid"] --> Q{"kid in cached<br/>JWKS? (cache ≤ 5 min)"}
     Q -- yes --> V[verify signature]
-    Q -- "no / cache empty / expired" --> R["GET {issuer}/protocol/openid-connect/certs"]
+    Q -- "cache empty / expired" --> R["GET {issuer}/protocol/openid-connect/certs"]
+    Q -- "unknown kid" --> CD{"last fetch<br/>&gt; 30 s ago?"}
+    CD -- yes --> R
+    CD -- "no (cooldown)" --> E
     R --> Q2{kid found now?}
     Q2 -- yes --> V
     Q2 -- no --> E["401 Unable to find a signing key"]
@@ -246,7 +251,7 @@ flowchart LR
 ```
 
 - **Startup does no network I/O.** `PyJWKClient` fetches only on the first verification. With Keycloak down, the API starts, `/health` is green, and **public reads keep working**. Only protected endpoints fail, with 401.
-- **Rotation:** an unknown `kid` triggers one fetch of the key set, so no restart is needed. Garbage `kid`s also trigger that fetch; rate-limit it if the API is exposed publicly.
+- **Rotation:** an unknown `kid` forces a fresh fetch of the key set, so no restart is needed. PyJWT allows that forced refresh **at most once per 30 s** (`cooldown_duration`). Garbage `kid`s can't make the API hammer Keycloak, but a token signed with a key rotated in the last 30 s may be rejected once; the client retries after a refresh.
 - **Keycloak outage:** cached keys keep existing tokens verifying for up to 5 min (decision D2).
 
 ## 8. CORS preflight
@@ -295,5 +300,5 @@ Keycloak-side errors, shown as Keycloak pages and never reaching the API:
 Debugging tips:
 
 - **401 "Invalid issuer":** the token came through a different hostname than `KEYCLOAK_ISSUER`. Decode it, compare `iss`, and fix `KC_HOSTNAME` or the URL the SPA uses.
-- **401 "Invalid audience":** the audience mapper is missing on the client that issued the token (`azp`).
+- **401 "Invalid token: Audience doesn't match":** the audience mapper is missing on the client that issued the token (`azp`).
 - **401 right after login:** compare the clocks of the Keycloak container and the host. With zero leeway, a clock difference can make fresh tokens look invalid.
