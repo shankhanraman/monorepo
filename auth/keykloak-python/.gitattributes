@@ -1,0 +1,4 @@
+# Mounted/copied into Linux containers: keep LF even with core.autocrlf=true
+*.sh text eol=lf
+*.conf text eol=lf
+*.sql text eol=lf

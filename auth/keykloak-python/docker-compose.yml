@@ -1,0 +1,86 @@
+services:
+  kdc:
+    build: ./kdc
+    hostname: kdc.lab.local
+    networks:
+      lab:
+        aliases: [kdc.lab.local]
+    ports:
+      - "88:88/tcp"
+      - "88:88/udp"
+    volumes:
+      - ./krb5.conf:/etc/krb5.conf:ro
+      - kdc-data:/var/lib/krb5kdc
+      - keytabs:/keytabs
+
+  # Postgres for the app (database "app") and Keycloak (database "keycloak").
+  # Only started with COMPOSE_PROFILES=local-db (the default in .env). Without it, KC_DB_URL in .env and
+  # DATABASE_URL in fastapi-seerver/.env point at an installed Postgres or AWS RDS instead.
+  db:
+    image: postgres:17
+    profiles: [local-db]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+    networks: [lab]
+    ports:
+      - "5434:5432"  # 5432/5433 are taken by locally installed Postgres servers on this machine
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./postgres/create-databases.sql:/db/create-databases.sql:ro
+      - ./postgres/initdb.sh:/docker-entrypoint-initdb.d/10-create-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d keycloak"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    command: start-dev --import-realm
+    depends_on:
+      kdc:
+        condition: service_started
+      db:
+        condition: service_healthy
+        required: false  # not started when using an external Postgres
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # Same issuer for the browser and FastAPI (both reach it as keycloak.lab.local:8080)
+      KC_HOSTNAME: http://keycloak.lab.local:8080
+      # Accounts, sessions and realm settings live in Postgres (replaces dev-mode H2).
+      # The realm import runs only while the realm doesn't exist yet: `docker compose down -v` to re-import.
+      KC_DB: postgres
+      KC_DB_URL: ${KC_DB_URL}
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+    networks:
+      lab:
+        aliases: [keycloak.lab.local]
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./krb5.conf:/etc/krb5.conf:ro
+      - keytabs:/keytabs:ro
+      - ./keycloak/lab-realm.json:/opt/keycloak/data/import/lab-realm.json:ro
+
+  # One-shot: realm settings an import can't set (Kerberos login step on, profile check off, self-registration on).
+  # Idempotent, re-runs on every `up`, so it also applies to an already-persisted realm. See keycloak/init.sh
+  keycloak-init:
+    image: quay.io/keycloak/keycloak:26.4
+    depends_on: [keycloak]
+    entrypoint: ["bash", "/init.sh"]
+    restart: on-failure
+    networks: [lab]
+    volumes:
+      - ./keycloak/init.sh:/init.sh:ro
+
+networks:
+  lab:
+
+volumes:
+  kdc-data:
+  keytabs:
+  pg-data:

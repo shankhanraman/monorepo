@@ -1,0 +1,31 @@
+.profile-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.profile-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.profile-form .profile-bio {
+  flex: 1 1 14rem;
+}
+
+.profile-form .error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.profiles-list {
+  padding-left: 1.2rem;
+}
+
+.profiles-list li {
+  margin-bottom: 0.4rem;
+}

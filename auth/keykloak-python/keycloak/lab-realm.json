@@ -1,0 +1,55 @@
+{
+  "realm": "lab",
+  "enabled": true,
+  "sslRequired": "none",
+  "clients": [
+    {
+      "clientId": "frontend",
+      "name": "React frontend",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:5173"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "fastapi-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "fastapi-server",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "components": {
+    "org.keycloak.storage.UserStorageProvider": [
+      {
+        "name": "kerberos",
+        "providerId": "kerberos",
+        "subComponents": {},
+        "config": {
+          "enabled": ["true"],
+          "priority": ["0"],
+          "kerberosRealm": ["LAB.LOCAL"],
+          "serverPrincipal": ["HTTP/keycloak.lab.local@LAB.LOCAL"],
+          "keyTab": ["/keytabs/keycloak.keytab"],
+          "allowPasswordAuthentication": ["true"],
+          "editMode": ["READ_ONLY"],
+          "updateProfileFirstLogin": ["false"],
+          "cachePolicy": ["DEFAULT"],
+          "debug": ["true"]
+        }
+      }
+    ]
+  }
+}
