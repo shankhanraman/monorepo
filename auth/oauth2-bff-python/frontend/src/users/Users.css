@@ -1,0 +1,27 @@
+.user-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.user-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.user-form .error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.users-list {
+  padding-left: 1.2rem;
+}
+
+.users-list li {
+  margin-bottom: 0.4rem;
+}

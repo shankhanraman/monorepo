@@ -1,0 +1,53 @@
+services:
+  # Postgres for the app (database "app") and Keycloak (database "keycloak").
+  # Only started with COMPOSE_PROFILES=local-db (the default in .env). Without it, KC_DB_URL in .env and
+  # DATABASE_URL in fastapi-seerver/.env point at an installed Postgres or AWS RDS instead.
+  db:
+    image: postgres:17
+    profiles: [local-db]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+    networks: [lab]
+    ports:
+      - "5435:5432"  # 5432/5433: Postgres installed on this PC, 5434: the keykloak-python project
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./postgres/create-databases.sql:/db/create-databases.sql:ro
+      - ./postgres/initdb.sh:/docker-entrypoint-initdb.d/10-create-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d keycloak"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    command: start-dev --import-realm
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false  # not started when using an external Postgres
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # The browser and FastAPI both reach Keycloak here, so the token issuer (iss) matches for both.
+      KC_HOSTNAME: http://localhost:8081
+      # Accounts, sessions and realm settings live in Postgres.
+      # The realm import runs only while the realm doesn't exist yet: `docker compose down -v` to re-import.
+      KC_DB: postgres
+      KC_DB_URL: ${KC_DB_URL}
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+    networks: [lab]
+    ports:
+      - "8081:8080"  # 8080 is the keykloak-python project's Keycloak
+    volumes:
+      - ./keycloak/jwt-lab-realm.json:/opt/keycloak/data/import/jwt-lab-realm.json:ro
+
+networks:
+  lab:
+
+volumes:
+  pg-data:

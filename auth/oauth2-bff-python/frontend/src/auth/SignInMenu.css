@@ -1,0 +1,53 @@
+.signin {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.signin-menu {
+  position: relative;
+}
+
+.signin-menu > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.signin-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.signin-menu-items {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.3rem);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 9rem;
+  padding: 0.3rem;
+  border: 1px solid #8884;
+  border-radius: 6px;
+  background: Canvas;
+  box-shadow: 0 4px 12px #0003;
+}
+
+.signin-menu-items button {
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.signin-menu-items button:hover,
+.signin-menu-items button:focus-visible {
+  background: #8882;
+}

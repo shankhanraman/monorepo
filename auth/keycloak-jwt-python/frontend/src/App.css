@@ -1,0 +1,44 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+.app {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.app-header h1 {
+  margin-right: auto;
+  font-size: 1.4rem;
+}
+
+.error {
+  color: #d33;
+}
+
+.muted {
+  opacity: 0.7;
+}
+
+.row-actions {
+  margin-left: 0.75rem;
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.row-actions button {
+  font-size: 0.8rem;
+}
