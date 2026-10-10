@@ -58,6 +58,17 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-local-dev.ps1
 
 It's safe to re-run: finished steps are skipped.
 
+### macOS / Linux
+
+Same steps with the bash version (no sudo needed: this lab has no Kerberos):
+```bash
+cd fastapi-seerver
+bash scripts/setup-local-dev.sh            # or: --no-start
+```
+It opens http://localhost:5174 in your default browser. Manual commands are the same as on Windows, with `.venv/bin/` instead of `.venv\Scripts\` (see [GETTING-STARTED.md](GETTING-STARTED.md)).
+
+> **Status on macOS:** written for macOS (bash 3.2, the version Apple ships). Its logic was tested in Linux containers under bash 3.2: start and Ctrl+C cleanup, and the parts every OS shares (Docker, Python, npm). It hasn't been run on a real Mac yet. If a step fails there, the message says which one.
+
 ## Manual run
 
 Step by step, with a check after each step and what to do if it fails: **[GETTING-STARTED.md](GETTING-STARTED.md)**. The short version:

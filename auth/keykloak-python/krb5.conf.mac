@@ -1,0 +1,17 @@
+# Kerberos client config for macOS (built-in Heimdal Kerberos). setup-local-dev.sh copies it to /etc/krb5.conf
+# (backing up any existing file). Same realm as the lab's KDC container; TCP to the published port 88.
+[libdefaults]
+    default_realm = LAB.LOCAL
+    dns_lookup_kdc = false
+    dns_lookup_realm = false
+    dns_canonicalize_hostname = false
+    rdns = false
+
+[realms]
+    LAB.LOCAL = {
+        kdc = tcp/127.0.0.1:88
+    }
+
+[domain_realm]
+    .lab.local = LAB.LOCAL
+    keycloak.lab.local = LAB.LOCAL

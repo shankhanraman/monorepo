@@ -52,6 +52,17 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-local-dev.ps1
 ```
 It starts Postgres and Keycloak, builds the backend (`alembic upgrade head` creates `users`, `profiles` and `sessions`), installs the frontend, then runs FastAPI (:8002) and Vite (:5175) in the same terminal (Ctrl+C stops both) and opens http://localhost:5175. Safe to re-run.
 
+### macOS / Linux
+
+Same steps with the bash version (no sudo needed: this lab has no Kerberos):
+```bash
+cd fastapi-seerver
+bash scripts/setup-local-dev.sh            # or: --no-start
+```
+It opens http://localhost:5175 in your default browser. Manual commands are the same as on Windows, with `.venv/bin/` instead of `.venv\Scripts\` (see [GETTING-STARTED.md](GETTING-STARTED.md)).
+
+> **Status on macOS:** written for macOS (bash 3.2, the version Apple ships). Its logic was tested in Linux containers under bash 3.2: start and Ctrl+C cleanup, and the parts every OS shares (Docker, Python, npm). It hasn't been run on a real Mac yet. If a step fails there, the message says which one.
+
 ## Use the site
 
 1. http://localhost:5175: you're a **guest** (lists visible, no edit buttons).

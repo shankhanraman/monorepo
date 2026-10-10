@@ -51,6 +51,43 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-local-dev.ps1 -User bob  
 
 It's safe to re-run: finished steps are skipped. The sections below explain what each step does, and are the manual way to do it.
 
+## macOS
+
+`setup-local-dev.ps1` is Windows-only. On a Mac (Docker Desktop for Mac, Apple Silicon or Intel) use the bash version:
+
+```bash
+cd fastapi-seerver
+bash scripts/setup-local-dev.sh                 # as alice
+bash scripts/setup-local-dev.sh --user bob      # another Kerberos user
+bash scripts/setup-local-dev.sh --no-start      # setup only
+```
+
+It does the same as the Windows script, adapted to macOS. It asks for **your Mac password once** (`sudo`), for `/etc/hosts` and `/etc/krb5.conf`.
+
+| Step | Windows (`.ps1`) | macOS (`.sh`) |
+|---|---|---|
+| Kerberos client | install MIT Kerberos (winget) | **nothing to install**: macOS has Kerberos built in (Heimdal `kinit` / `klist`) |
+| Kerberos config | `C:\ProgramData\MIT\Kerberos5\krb5.ini` | `/etc/krb5.conf`, copied from [krb5.conf.mac](krb5.conf.mac). **An existing file is backed up** as `/etc/krb5.conf.backup-<date>` |
+| Hosts entry | `C:\Windows\System32\drivers\etc\hosts` (UAC prompt) | `/etc/hosts`, for **both `127.0.0.1` and `::1`**: macOS treats `*.local` as Bonjour names, and an IPv4-only entry can stall each lookup ~5 s |
+| Browser | Firefox autoconfig (MIT GSSAPI) | **Safari:** usually nothing. **Chrome:** the script sets `AuthServerAllowlist=keycloak.lab.local` (restart Chrome, check `chrome://policy`). **Firefox:** `about:config` → `network.negotiate-auth.trusted-uris` = `keycloak.lab.local` |
+| Python venv | `.venv\Scripts\…` | `.venv/bin/…` |
+
+Manual steps on a Mac: the same as section 2 below, with `.venv/bin/` instead of `.venv\Scripts\`. Then:
+```bash
+kinit alice@LAB.LOCAL      # password alice123
+klist                      # after logging in on the site: also shows HTTP/keycloak.lab.local@LAB.LOCAL
+```
+
+**Undo the Mac changes** when you're done with the lab:
+- restore your backup: `sudo mv /etc/krb5.conf.backup-<date> /etc/krb5.conf` (or `sudo rm /etc/krb5.conf` if there was none);
+- remove the two `lab.local` lines from `/etc/hosts`;
+- `defaults delete com.google.Chrome AuthServerAllowlist`;
+- `kdestroy`.
+
+> **Status on macOS:** written for macOS (bash 3.2, the version Apple ships). Its logic was tested in Linux containers under bash 3.2: start and Ctrl+C cleanup, and the parts every OS shares (Docker, Python, npm). It hasn't been run on a real Mac yet. If a step fails there, the message says which one.
+
+The Mac Kerberos config itself is tested: `krb5.conf.mac` was used by real Heimdal `kinit` (the implementation macOS ships) to get a ticket from the lab's KDC over TCP.
+
 ## 1. One-time Windows setup
 
 1. **Hosts file** (`C:\Windows\System32\drivers\etc\hosts`, edit as admin):

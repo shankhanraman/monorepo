@@ -14,6 +14,18 @@ What you'll end up with:
 
 ---
 
+> **On macOS / Linux:** the steps are the same in Terminal, with these swaps:
+>
+> | Windows (PowerShell) | macOS / Linux (bash) |
+> |---|---|
+> | `cd C:\monorepo\auth\…` | `cd ~/…/monorepo/auth/…` (wherever you cloned it) |
+> | `Copy-Item a b` | `cp a b` |
+> | `.venv\Scripts\python.exe`, `.venv\Scripts\alembic.exe`, `.venv\Scripts\fastapi.exe` | `.venv/bin/python`, `.venv/bin/alembic`, `.venv/bin/fastapi` |
+> | `(Invoke-RestMethod <url>).issuer` | `curl -s <url>` |
+> | `py -3.12 -m venv .venv` | `python3.12 -m venv .venv` (or `brew install uv` and use the `uv` lines as-is) |
+>
+> Or do steps 2–8 in one go: `bash fastapi-seerver/scripts/setup-local-dev.sh`.
+
 ## Step 0: Check the tools (once)
 
 ```powershell
