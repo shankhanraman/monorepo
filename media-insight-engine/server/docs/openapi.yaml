@@ -1,0 +1,1104 @@
+openapi: 3.1.0
+info:
+  title: Media Insight Engine API
+  version: 0.1.0
+  description: |
+    Day-1 API for the Admissions Media Insight Engine (PRD FR-1 … FR-5).
+    Readable guide with curl examples and polling rules: api-contract.md (same folder).
+
+    Conventions
+    - Collection ids are slugs from the config file name (`yale`, `mit`). `all` is accepted only by the ask endpoint.
+    - All other ids are integers.
+    - Times are in seconds (`start_s`, `end_s`, `ts_s`). For web sources these hold the section order number, not seconds.
+    - Dates are ISO 8601. `published_at` is a date (`YYYY-MM-DD`), other timestamps are date-times in UTC.
+    - Errors: `{"detail": "message"}`; request validation errors (422) use FastAPI's `{"detail": [ … ]}` list.
+# Day 1 has no authentication (PRD: single user, local). Basic auth arrives with hosting.
+security: []
+servers:
+  - url: http://localhost:8003
+    description: Local (docker compose)
+tags:
+  - name: health
+    description: Liveness
+  - name: collections
+    description: Colleges from config/collections/*.yaml and their sync (FR-1)
+  - name: sources
+    description: Ingested videos and web pages with analysis (FR-2, FR-3)
+  - name: ask
+    description: Grounded Q&A with citations (FR-4)
+  - name: question-banks
+    description: Saved question lists, runs and reports (FR-5)
+  - name: notes
+    description: Saved answers (FR-4.6)
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      operationId: getHealth
+      summary: Liveness check
+      responses:
+        "200":
+          description: Server and database are up
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, const: ok }
+              example: { status: ok }
+
+  /collections:
+    get:
+      tags: [collections]
+      operationId: listCollections
+      summary: List collections (one per config file)
+      description: Includes collections that were never synced (counts are then 0 and `last_synced_at` is null).
+      responses:
+        "200":
+          description: All collections, sorted by name
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Collection" }
+              example:
+                - id: mit
+                  name: MIT
+                  lens_name: undergrad-admissions
+                  lens_tags: [testing, essays, why-major, ea-ed, extracurriculars, recommendations, interviews, financial-aid]
+                  focus_note: Early Action, class of 2031
+                  segment_seconds: 60
+                  source_counts: { total: 4, ready: 4, in_progress: 0, failed: 0, archived: 0 }
+                  last_synced_at: "2026-10-11T14:02:11Z"
+                - id: yale
+                  name: Yale
+                  lens_name: undergrad-admissions
+                  lens_tags: [testing, essays, why-major, ea-ed, extracurriculars, recommendations, interviews, financial-aid]
+                  focus_note: Early Action, class of 2031
+                  segment_seconds: 60
+                  source_counts: { total: 5, ready: 3, in_progress: 1, failed: 1, archived: 0 }
+                  last_synced_at: "2026-10-11T14:05:40Z"
+
+  /sync:
+    post:
+      tags: [collections]
+      operationId: syncCollection
+      summary: Sync one collection with its YAML file (FR-1.3, FR-1.4)
+      description: |
+        Validates `config/collections/<collection>.yaml`, compares it with the database and returns the sync log.
+        New and previously failed URLs are queued for background ingest (poll the sources list);
+        unchanged ready URLs are skipped; URLs removed from the file are archived (never deleted).
+        Idempotent: running it twice in a row gives `skipped` for everything already queued or ready.
+      parameters:
+        - name: collection
+          in: query
+          required: true
+          schema: { type: string, pattern: "^[a-z0-9-]+$" }
+          example: yale
+      responses:
+        "200":
+          description: Sync log (ingest continues in the background)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SyncLog" }
+              examples: { SyncLogYale: { $ref: "#/components/examples/SyncLogYale" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: A sync for this collection is already running
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: "Sync already running for 'yale'" }
+        "422":
+          description: The YAML file itself is invalid (e.g. missing `name`, unknown lens). Per-source problems are NOT errors; they appear as `failed` entries in the log.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: "config/collections/yale.yaml: lens 'undergrad' not found in config/lenses/" }
+
+  /collections/{collection_id}/sync-log:
+    get:
+      tags: [collections]
+      operationId: getLatestSyncLog
+      summary: Latest sync log of a collection
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: Most recent sync log
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SyncLog" }
+              examples: { SyncLogYale: { $ref: "#/components/examples/SyncLogYale" } }
+        "404":
+          description: Unknown collection, or never synced
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: "Collection 'yale' has not been synced yet" }
+
+  /collections/{collection_id}/sources:
+    get:
+      tags: [sources]
+      operationId: listSources
+      summary: Sources of a collection with live status (FR-2.4)
+      description: Poll every 3 s while any source is `queued`, `transcribing` or `analyzing`.
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+        - name: include_archived
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Sources sorted by priority (high first), then label
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SourceSummary" }
+              example:
+                - id: 12
+                  collection_id: yale
+                  type: youtube
+                  url: https://www.youtube.com/watch?v=abc123XYZ00
+                  label: Admissions podcast – supplemental essays
+                  priority: high
+                  title: "Inside the Yale Admissions Office: Supplemental Essays"
+                  host: Yale Admissions
+                  published_at: "2025-09-15"
+                  duration_s: 2112
+                  status: ready
+                  error: null
+                  archived: false
+                  ingested_at: "2026-10-11T14:07:02Z"
+                  segment_count: 36
+                - id: 13
+                  collection_id: yale
+                  type: web
+                  url: https://admissions.yale.edu/essays
+                  label: Essay prompts page
+                  priority: normal
+                  title: Essays | Yale College Undergraduate Admissions
+                  host: admissions.yale.edu
+                  published_at: null
+                  duration_s: null
+                  status: analyzing
+                  error: null
+                  archived: false
+                  ingested_at: null
+                  segment_count: 0
+                - id: 14
+                  collection_id: yale
+                  type: youtube
+                  url: https://www.youtube.com/watch?v=noCaps00000
+                  label: Info session recording
+                  priority: normal
+                  title: Yale Virtual Information Session
+                  host: Yale Admissions
+                  published_at: "2024-11-02"
+                  duration_s: 3605
+                  status: failed
+                  error: "No captions available (audio transcription is Day 2)"
+                  archived: false
+                  ingested_at: null
+                  segment_count: 0
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /sources/{source_id}:
+    get:
+      tags: [sources]
+      operationId: getSource
+      summary: One source with overview, chapters, segments and key quotes (FR-3)
+      parameters:
+        - $ref: "#/components/parameters/SourceId"
+      responses:
+        "200":
+          description: Full source. Chapters, segments and quotes are empty until `status` is `ready`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SourceDetail" }
+              example:
+                id: 12
+                collection_id: yale
+                type: youtube
+                url: https://www.youtube.com/watch?v=abc123XYZ00
+                ext_id: abc123XYZ00
+                label: Admissions podcast – supplemental essays
+                priority: high
+                title: "Inside the Yale Admissions Office: Supplemental Essays"
+                host: Yale Admissions
+                published_at: "2025-09-15"
+                duration_s: 2112
+                status: ready
+                error: null
+                archived: false
+                ingested_at: "2026-10-11T14:07:02Z"
+                segment_count: 36
+                overview: "Two Yale admissions officers explain how the supplemental essays are read. Aimed at applicants and counselors; covers the short answers, the 'why Yale' and 'why this major' prompts, and common mistakes. Useful for planning every Yale-specific essay."
+                chapters:
+                  - { id: 101, start_s: 0, end_s: 570, title: Introduction and how files are read, summary: "The hosts introduce themselves and describe the committee process. Essays are read for voice, not polish." }
+                  - { id: 102, start_s: 570, end_s: 1065, title: Supplemental essays, summary: "Each short answer should add something new. Officers want specifics about academic interests and community." }
+                segments:
+                  - id: 5001
+                    ord: 12
+                    start_s: 720
+                    end_s: 780
+                    anchor: null
+                    text: "so when you write about why you want to study a major, we really want to hear what got you curious in the first place..."
+                    summary: Officers want the origin of the interest in the major, told through a specific experience.
+                    tags: [essays, why-major]
+                    deep_link: https://youtu.be/abc123XYZ00?t=720
+                key_quotes:
+                  - id: 301
+                    segment_id: 5001
+                    ts_s: 731
+                    quote: "we really want to hear what got you curious in the first place"
+                    is_advice: true
+                    deep_link: https://youtu.be/abc123XYZ00?t=731
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /collections/{collection_id}/ask:
+    post:
+      tags: [ask]
+      operationId: ask
+      summary: Ask a grounded question (FR-4)
+      description: |
+        Answers only from retrieved segments. Every `[n]` in `answer_md` matches a citation with the same `n`.
+        If the sources don't cover the question, `not_covered` is true, `answer_md` is "Not covered in your sources."
+        and `closest` lists the nearest segments.
+        Use `all` as the collection id to search every college (FR-1.6).
+        Typical latency 3–10 s.
+      parameters:
+        - name: collection_id
+          in: path
+          required: true
+          description: Collection slug, or `all`
+          schema: { type: string, pattern: "^[a-z0-9-]+$" }
+          example: yale
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AskRequest" }
+            examples:
+              simple:
+                summary: First question
+                value:
+                  question: What does Yale look for in the why-this-major short answer?
+              followUp:
+                summary: Follow-up with history and filters
+                value:
+                  question: And how long should it be?
+                  history:
+                    - question: What does Yale look for in the why-this-major short answer?
+                      answer_md: "Officers want the origin of your interest, told through a specific experience [1] ..."
+                  filters:
+                    source_ids: [12]
+                    tags: [essays]
+                    date_from: "2024-01-01"
+                    date_to: null
+      responses:
+        "200":
+          description: Answer with citations, or a not-covered result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AskResponse" }
+              examples:
+                covered: { $ref: "#/components/examples/AskCovered" }
+                notCovered: { $ref: "#/components/examples/AskNotCovered" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "502":
+          description: The language model call failed after retries
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: "Answer generation failed, please retry" }
+
+  /collections/{collection_id}/question-banks:
+    get:
+      tags: [question-banks]
+      operationId: listQuestionBanks
+      summary: Saved question banks of a collection
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: Banks, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/QuestionBank" }
+              examples: { BankList: { $ref: "#/components/examples/BankList" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [question-banks]
+      operationId: createQuestionBank
+      summary: Save a named list of questions (FR-5.1)
+      description: The client parses pasted text (one per line) or CSV (first column) and sends a clean list.
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/QuestionBankCreate" }
+            example:
+              name: Yale supplements + testing
+              questions:
+                - What does Yale look for in the why-this-major short answer?
+                - Is the SAT/ACT required and how much does it matter?
+      responses:
+        "201":
+          description: Saved bank
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuestionBank" }
+              examples: { BankYale: { $ref: "#/components/examples/BankYale" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /question-banks/{bank_id}:
+    delete:
+      tags: [question-banks]
+      operationId: deleteQuestionBank
+      summary: Delete a bank and its runs
+      parameters:
+        - $ref: "#/components/parameters/BankId"
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /question-banks/{bank_id}/run:
+    post:
+      tags: [question-banks]
+      operationId: runQuestionBank
+      summary: Run every question in the bank through ask (FR-5.2)
+      description: Starts a background run and returns at once. Poll `GET /bank-runs/{run_id}` every 2 s until `status` is `done` or `failed`.
+      parameters:
+        - $ref: "#/components/parameters/BankId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                filters: { $ref: "#/components/schemas/AskFilters" }
+            example: { filters: { tags: [] } }
+      responses:
+        "202":
+          description: Run started
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BankRun" }
+              example:
+                id: 7
+                bank_id: 3
+                bank_name: Yale supplements + testing
+                collection_id: yale
+                status: running
+                done: 0
+                total: 2
+                created_at: "2026-10-11T15:00:00Z"
+                finished_at: null
+                items:
+                  - { index: 0, question: "What does Yale look for in the why-this-major short answer?", status: pending, answer_md: null, coverage: null, watch: [], stale_warning: null, error: null }
+                  - { index: 1, question: "Is the SAT/ACT required and how much does it matter?", status: pending, answer_md: null, coverage: null, watch: [], stale_warning: null, error: null }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: A run of this bank is already in progress
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: "Bank 3 is already running (run 7)" }
+
+  /bank-runs/{run_id}:
+    get:
+      tags: [question-banks]
+      operationId: getBankRun
+      summary: Progress and report of a bank run (FR-5.2, FR-5.3)
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Run with one report item per question (in bank order)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BankRun" }
+              examples: { BankRunDone: { $ref: "#/components/examples/BankRunDone" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /bank-runs/{run_id}/report.md:
+    get:
+      tags: [question-banks]
+      operationId: exportBankRunMarkdown
+      summary: Report as a Markdown file (FR-5.4)
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Markdown download (`Content-Disposition attachment; filename="yale-report-7.md"`)
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              example: attachment; filename="yale-report-7.md"
+          content:
+            text/markdown:
+              schema: { type: string }
+              example: |
+                # Yale supplements + testing
+                _Yale · run 7 · 2026-10-11 · summary of sources, verify on the official admissions site_
+
+                ## 1. What does Yale look for in the why-this-major short answer?
+                **Coverage:** strong
+
+                Officers want the origin of your interest, told through a specific experience [1] ...
+
+                **Watch these**
+                1. [Inside the Yale Admissions Office: Supplemental Essays — 12:00](https://youtu.be/abc123XYZ00?t=720) (2025-09-15)
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Run not finished yet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: "Run 7 is still running" }
+
+  /notes:
+    get:
+      tags: [notes]
+      operationId: listNotes
+      summary: Saved answers, newest first
+      parameters:
+        - name: collection
+          in: query
+          required: false
+          description: Only notes of this collection (`all` = notes saved from all-colleges questions)
+          schema: { type: string }
+      responses:
+        "200":
+          description: Notes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Note" }
+              examples: { NoteList: { $ref: "#/components/examples/NoteList" } }
+    post:
+      tags: [notes]
+      operationId: createNote
+      summary: Save an answer to Notes (FR-4.6)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NoteCreate" }
+            example:
+              collection_id: yale
+              question: What does Yale look for in the why-this-major short answer?
+              answer_md: "Officers want the origin of your interest, told through a specific experience [1] ..."
+              coverage: strong
+              citations: []
+              comment: Use for Aksh's draft
+      responses:
+        "201":
+          description: Saved note
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Note" }
+              examples: { NoteExample: { $ref: "#/components/examples/NoteExample" } }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /notes/{note_id}:
+    delete:
+      tags: [notes]
+      operationId: deleteNote
+      summary: Delete a note
+      parameters:
+        - name: note_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  parameters:
+    CollectionId:
+      name: collection_id
+      in: path
+      required: true
+      description: Collection slug (config file name without .yaml)
+      schema: { type: string, pattern: "^[a-z0-9-]+$" }
+      example: yale
+    SourceId:
+      name: source_id
+      in: path
+      required: true
+      schema: { type: integer }
+      example: 12
+    BankId:
+      name: bank_id
+      in: path
+      required: true
+      schema: { type: integer }
+      example: 3
+    RunId:
+      name: run_id
+      in: path
+      required: true
+      schema: { type: integer }
+      example: 7
+
+  responses:
+    NotFound:
+      description: Unknown id
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { detail: "Not found" }
+    ValidationError:
+      description: Request body failed validation (FastAPI format)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ValidationErrorResponse" }
+          example:
+            detail:
+              - { loc: [body, question], msg: "String should have at least 3 characters", type: string_too_short }
+
+  schemas:
+    Error:
+      type: object
+      required: [detail]
+      properties:
+        detail: { type: string }
+
+    ValidationErrorResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            required: [loc, msg, type]
+            properties:
+              loc: { type: array, items: { type: [string, integer] } }
+              msg: { type: string }
+              type: { type: string }
+
+    SourceType:
+      type: string
+      enum: [youtube, web]
+      description: Day 1 types. `audio` and `pdf` arrive on Day 2.
+
+    SourceStatus:
+      type: string
+      enum: [queued, transcribing, analyzing, ready, failed]
+
+    Coverage:
+      type: string
+      enum: [strong, partial, none]
+
+    Priority:
+      type: string
+      enum: [high, normal, low]
+
+    Collection:
+      type: object
+      required: [id, name, lens_name, lens_tags, focus_note, segment_seconds, source_counts, last_synced_at]
+      properties:
+        id: { type: string, description: "Slug, e.g. yale" }
+        name: { type: string }
+        lens_name: { type: string, description: "Shared lens file name, or `inline` when the college defines its own" }
+        lens_tags:
+          type: array
+          items: { type: string }
+          description: Allowed tag vocabulary (use for the tag filter)
+        focus_note: { type: [string, "null"] }
+        segment_seconds: { type: integer, minimum: 30, maximum: 300 }
+        source_counts:
+          type: object
+          required: [total, ready, in_progress, failed, archived]
+          properties:
+            total: { type: integer, description: Not archived }
+            ready: { type: integer }
+            in_progress: { type: integer, description: queued + transcribing + analyzing }
+            failed: { type: integer }
+            archived: { type: integer }
+        last_synced_at: { type: [string, "null"], format: date-time }
+
+    SyncAction:
+      type: string
+      enum: [queued, skipped, failed, archived]
+      description: |
+        queued   – new URL or failed before; ingest started.
+        skipped  – already ready or already being ingested (reason says which).
+        failed   – invalid entry or unsupported type; nothing ingested (reason says why).
+        archived – removed from the YAML; hidden from answers, kept in the database.
+
+    SyncEntry:
+      type: object
+      required: [url, label, action, reason, source_id]
+      properties:
+        url: { type: string, description: Normalized URL }
+        label: { type: [string, "null"] }
+        action: { $ref: "#/components/schemas/SyncAction" }
+        reason: { type: string }
+        source_id: { type: [integer, "null"], description: Null when the entry failed validation }
+
+    SyncLog:
+      type: object
+      required: [id, collection_id, created_at, summary, entries]
+      properties:
+        id: { type: integer }
+        collection_id: { type: string }
+        created_at: { type: string, format: date-time }
+        summary:
+          type: object
+          required: [queued, skipped, failed, archived]
+          properties:
+            queued: { type: integer }
+            skipped: { type: integer }
+            failed: { type: integer }
+            archived: { type: integer }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/SyncEntry" }
+
+    SourceSummary:
+      type: object
+      required: [id, collection_id, type, url, label, priority, title, host, published_at, duration_s, status, error, archived, ingested_at, segment_count]
+      properties:
+        id: { type: integer }
+        collection_id: { type: string }
+        type: { $ref: "#/components/schemas/SourceType" }
+        url: { type: string }
+        label: { type: [string, "null"], description: From the YAML }
+        priority: { $ref: "#/components/schemas/Priority" }
+        title: { type: [string, "null"], description: From the source metadata; null until fetched }
+        host: { type: [string, "null"], description: YouTube channel or website name }
+        published_at: { type: [string, "null"], format: date, description: "Null = date unknown (treat as possibly stale)" }
+        duration_s: { type: [integer, "null"], description: Videos only }
+        status: { $ref: "#/components/schemas/SourceStatus" }
+        error: { type: [string, "null"], description: Reason when status is failed }
+        archived: { type: boolean }
+        ingested_at: { type: [string, "null"], format: date-time, description: When it became ready }
+        segment_count: { type: integer }
+
+    Chapter:
+      type: object
+      required: [id, start_s, end_s, title, summary]
+      properties:
+        id: { type: integer }
+        start_s: { type: integer }
+        end_s: { type: integer }
+        title: { type: string }
+        summary: { type: string, description: 2–3 sentences }
+
+    Segment:
+      type: object
+      required: [id, ord, start_s, end_s, anchor, text, summary, tags, deep_link]
+      description: |
+        Video: a time slice (default 60 s). Web: a page section; `start_s`/`end_s` are then the section
+        order number and `anchor` is the section heading.
+      properties:
+        id: { type: integer }
+        ord: { type: integer, description: "Position in the source, from 0" }
+        start_s: { type: integer }
+        end_s: { type: integer }
+        anchor: { type: [string, "null"], description: Section heading (web only) }
+        text: { type: string, description: Raw transcript / page text (show it so users can check caption errors) }
+        summary: { type: string, description: 1–2 sentence minute summary }
+        tags:
+          type: array
+          items: { type: string }
+        deep_link: { type: string, description: "External link to this moment (YouTube ?t= or page #:~:text=)" }
+
+    KeyQuote:
+      type: object
+      required: [id, segment_id, ts_s, quote, is_advice, deep_link]
+      properties:
+        id: { type: integer }
+        segment_id: { type: integer }
+        ts_s: { type: integer }
+        quote: { type: string, description: Verbatim words from the transcript (label as "verbatim") }
+        is_advice: { type: boolean, description: Direct advice from the speaker }
+        deep_link: { type: string }
+
+    SourceDetail:
+      allOf:
+        - $ref: "#/components/schemas/SourceSummary"
+        - type: object
+          required: [ext_id, overview, chapters, segments, key_quotes]
+          properties:
+            ext_id: { type: [string, "null"], description: YouTube video id (for the embedded player); null for web }
+            overview: { type: [string, "null"], description: One paragraph; null until ready }
+            chapters:
+              type: array
+              items: { $ref: "#/components/schemas/Chapter" }
+            segments:
+              type: array
+              items: { $ref: "#/components/schemas/Segment" }
+            key_quotes:
+              type: array
+              items: { $ref: "#/components/schemas/KeyQuote" }
+
+    AskFilters:
+      type: object
+      properties:
+        source_ids:
+          type: array
+          items: { type: integer }
+          description: Empty or missing = all sources
+        tags:
+          type: array
+          items: { type: string }
+          description: Segment must have at least one of these tags
+        date_from: { type: [string, "null"], format: date, description: Source published on or after }
+        date_to: { type: [string, "null"], format: date, description: Source published on or before }
+
+    HistoryTurn:
+      type: object
+      required: [question, answer_md]
+      properties:
+        question: { type: string }
+        answer_md: { type: string }
+
+    AskRequest:
+      type: object
+      required: [question]
+      properties:
+        question: { type: string, minLength: 3, maxLength: 2000 }
+        history:
+          type: array
+          maxItems: 10
+          items: { $ref: "#/components/schemas/HistoryTurn" }
+          description: Earlier turns of this chat, oldest first (the server is stateless)
+        filters: { $ref: "#/components/schemas/AskFilters" }
+
+    Citation:
+      type: object
+      required: [n, segment_id, source_id, collection_id, source_type, source_title, host, published_at, start_s, end_s, anchor, label, snippet, deep_link, app_link, stale]
+      properties:
+        n: { type: integer, description: "Matches [n] in answer_md (starts at 1)" }
+        segment_id: { type: integer }
+        source_id: { type: integer }
+        collection_id: { type: string, description: Useful when asking across all colleges }
+        source_type: { $ref: "#/components/schemas/SourceType" }
+        source_title: { type: string }
+        host: { type: [string, "null"] }
+        published_at: { type: [string, "null"], format: date }
+        start_s: { type: integer }
+        end_s: { type: integer }
+        anchor: { type: [string, "null"], description: Section heading (web) }
+        label: { type: string, description: 'Ready-to-show position: "12:00–13:00" for video, the section heading for web' }
+        snippet: { type: string, description: Supporting transcript or page text }
+        deep_link: { type: string, description: "Open externally: https://youtu.be/<id>?t=<s> or <url>#:~:text=<first words>" }
+        app_link: { type: string, description: "In-app route: /sources/<id>?t=<s> (web: /sources/<id>#seg-<segment_id>)" }
+        stale: { type: boolean, description: Source older than 18 months or date unknown }
+
+    AskResponse:
+      type: object
+      required: [question, label, answer_md, coverage, not_covered, citations, closest, stale_warning, conflicts, retried]
+      properties:
+        question: { type: string }
+        label: { type: string, const: Summary of sources, description: "Show above the answer (synthesis, not verbatim)" }
+        answer_md: { type: string, description: "Plain text with paragraphs and [n] markers; no other Markdown" }
+        coverage: { $ref: "#/components/schemas/Coverage" }
+        not_covered: { type: boolean }
+        citations:
+          type: array
+          items: { $ref: "#/components/schemas/Citation" }
+          description: Ordered by n. Empty when not_covered.
+        closest:
+          type: array
+          items: { $ref: "#/components/schemas/Citation" }
+          description: Up to 3 nearest segments when not_covered (n = 1..3, not referenced in the text)
+        stale_warning: { type: [string, "null"], description: Show as a warning banner }
+        conflicts: { type: [string, "null"], description: Where sources disagree; show as a banner }
+        retried: { type: boolean, description: True when the search was rewritten once (debug/info) }
+
+    QuestionBankCreate:
+      type: object
+      required: [name, questions]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        questions:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { type: string, minLength: 3, maxLength: 2000 }
+
+    QuestionBank:
+      type: object
+      required: [id, collection_id, name, questions, created_at, latest_run_id]
+      properties:
+        id: { type: integer }
+        collection_id: { type: string }
+        name: { type: string }
+        questions:
+          type: array
+          items: { type: string }
+        created_at: { type: string, format: date-time }
+        latest_run_id: { type: [integer, "null"] }
+
+    ReportItem:
+      type: object
+      required: [index, question, status, answer_md, coverage, watch, stale_warning, error]
+      properties:
+        index: { type: integer, description: "Position in the bank, from 0" }
+        question: { type: string }
+        status: { type: string, enum: [pending, done, failed] }
+        answer_md: { type: [string, "null"], description: "Short answer with [n] markers matching watch[].n" }
+        coverage:
+          oneOf:
+            - $ref: "#/components/schemas/Coverage"
+            - type: "null"
+        watch:
+          type: array
+          maxItems: 5
+          items: { $ref: "#/components/schemas/Citation" }
+          description: '"Watch these": 2–5 cited moments ranked by relevance (fewer only if fewer were cited)'
+        stale_warning: { type: [string, "null"] }
+        error: { type: [string, "null"] }
+
+    BankRun:
+      type: object
+      required: [id, bank_id, bank_name, collection_id, status, done, total, created_at, finished_at, items]
+      properties:
+        id: { type: integer }
+        bank_id: { type: integer }
+        bank_name: { type: string }
+        collection_id: { type: string }
+        status: { type: string, enum: [running, done, failed] }
+        done: { type: integer, description: Finished questions (done or failed) }
+        total: { type: integer }
+        created_at: { type: string, format: date-time }
+        finished_at: { type: [string, "null"], format: date-time }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ReportItem" }
+
+    NoteCreate:
+      type: object
+      required: [collection_id, question, answer_md, coverage, citations]
+      properties:
+        collection_id: { type: string, description: Slug or `all` }
+        question: { type: string }
+        answer_md: { type: string }
+        coverage: { $ref: "#/components/schemas/Coverage" }
+        citations:
+          type: array
+          items: { $ref: "#/components/schemas/Citation" }
+        comment: { type: [string, "null"], maxLength: 2000 }
+
+    Note:
+      allOf:
+        - $ref: "#/components/schemas/NoteCreate"
+        - type: object
+          required: [id, created_at]
+          properties:
+            id: { type: integer }
+            created_at: { type: string, format: date-time }
+
+  examples:
+    SyncLogYale:
+      value:
+        id: 21
+        collection_id: yale
+        created_at: "2026-10-11T14:05:40Z"
+        summary: { queued: 1, skipped: 2, failed: 1, archived: 1 }
+        entries:
+          - { url: "https://www.youtube.com/watch?v=abc123XYZ00", label: "Admissions podcast – supplemental essays", action: skipped, reason: "Already ready", source_id: 12 }
+          - { url: "https://admissions.yale.edu/essays", label: "Essay prompts page", action: queued, reason: "New URL", source_id: 13 }
+          - { url: "https://www.youtube.com/watch?v=def456UVW11", label: "Testing policy Q&A", action: skipped, reason: "Already being ingested (transcribing)", source_id: 15 }
+          - { url: "https://example.com/episode.mp3", label: "Podcast episode on testing", action: failed, reason: "Type 'audio' is not supported until Day 2", source_id: null }
+          - { url: "https://www.youtube.com/watch?v=old000000AA", label: "Old webinar", action: archived, reason: "Removed from yale.yaml", source_id: 9 }
+
+    AskCovered:
+      summary: Covered answer with two citations
+      value:
+        question: What does Yale look for in the why-this-major short answer?
+        label: Summary of sources
+        answer_md: "Officers want to know where your interest in the major came from, told through one specific experience rather than a list of achievements [1]. They also look for how you would use Yale's resources in that field, such as particular courses or research [2]."
+        coverage: strong
+        not_covered: false
+        citations:
+          - n: 1
+            segment_id: 5001
+            source_id: 12
+            collection_id: yale
+            source_type: youtube
+            source_title: "Inside the Yale Admissions Office: Supplemental Essays"
+            host: Yale Admissions
+            published_at: "2025-09-15"
+            start_s: 720
+            end_s: 780
+            anchor: null
+            label: "12:00–13:00"
+            snippet: "so when you write about why you want to study a major, we really want to hear what got you curious in the first place..."
+            deep_link: https://youtu.be/abc123XYZ00?t=720
+            app_link: /sources/12?t=720
+            stale: false
+          - n: 2
+            segment_id: 6010
+            source_id: 13
+            collection_id: yale
+            source_type: web
+            source_title: Essays | Yale College Undergraduate Admissions
+            host: admissions.yale.edu
+            published_at: null
+            start_s: 3
+            end_s: 3
+            anchor: Short Answer Questions
+            label: Short Answer Questions
+            snippet: "Tell us about a topic or idea that excites you and is related to one or more academic areas you selected above..."
+            deep_link: "https://admissions.yale.edu/essays#:~:text=Tell%20us%20about%20a%20topic"
+            app_link: /sources/13#seg-6010
+            stale: true
+        closest: []
+        stale_warning: "One cited source has no publish date. Admissions policies change every year: verify on the official Yale admissions site."
+        conflicts: null
+        retried: false
+
+    AskNotCovered:
+      summary: Question the sources don't cover
+      value:
+        question: What is Yale's hockey recruiting process?
+        label: Summary of sources
+        answer_md: Not covered in your sources.
+        coverage: none
+        not_covered: true
+        citations: []
+        closest:
+          - n: 1
+            segment_id: 5120
+            source_id: 12
+            collection_id: yale
+            source_type: youtube
+            source_title: "Inside the Yale Admissions Office: Supplemental Essays"
+            host: Yale Admissions
+            published_at: "2025-09-15"
+            start_s: 1500
+            end_s: 1560
+            anchor: null
+            label: "25:00–26:00"
+            snippet: "a lot of students ask about athletics and the role of coaches..."
+            deep_link: https://youtu.be/abc123XYZ00?t=1500
+            app_link: /sources/12?t=1500
+            stale: false
+        stale_warning: null
+        conflicts: null
+        retried: true
+
+    BankYale:
+      value:
+        id: 3
+        collection_id: yale
+        name: Yale supplements + testing
+        questions:
+          - What does Yale look for in the why-this-major short answer?
+          - Is the SAT/ACT required and how much does it matter?
+        created_at: "2026-10-11T14:58:00Z"
+        latest_run_id: 7
+
+    BankList:
+      value:
+        - id: 3
+          collection_id: yale
+          name: Yale supplements + testing
+          questions:
+            - What does Yale look for in the why-this-major short answer?
+            - Is the SAT/ACT required and how much does it matter?
+          created_at: "2026-10-11T14:58:00Z"
+          latest_run_id: 7
+
+    NoteList:
+      value:
+        - id: 4
+          collection_id: yale
+          question: What does Yale look for in the why-this-major short answer?
+          answer_md: "Officers want the origin of your interest, told through one specific experience [1]."
+          coverage: strong
+          citations: []
+          comment: Use for Aksh's draft
+          created_at: "2026-10-11T15:10:00Z"
+
+    BankRunDone:
+      value:
+        id: 7
+        bank_id: 3
+        bank_name: Yale supplements + testing
+        collection_id: yale
+        status: done
+        done: 2
+        total: 2
+        created_at: "2026-10-11T15:00:00Z"
+        finished_at: "2026-10-11T15:00:24Z"
+        items:
+          - index: 0
+            question: What does Yale look for in the why-this-major short answer?
+            status: done
+            answer_md: "Officers want the origin of your interest, told through one specific experience [1]."
+            coverage: strong
+            watch:
+              - n: 1
+                segment_id: 5001
+                source_id: 12
+                collection_id: yale
+                source_type: youtube
+                source_title: "Inside the Yale Admissions Office: Supplemental Essays"
+                host: Yale Admissions
+                published_at: "2025-09-15"
+                start_s: 720
+                end_s: 780
+                anchor: null
+                label: "12:00–13:00"
+                snippet: "...we really want to hear what got you curious in the first place..."
+                deep_link: https://youtu.be/abc123XYZ00?t=720
+                app_link: /sources/12?t=720
+                stale: false
+            stale_warning: null
+            error: null
+          - index: 1
+            question: Is the SAT/ACT required and how much does it matter?
+            status: done
+            answer_md: "Yale requires testing for this cycle and accepts several test types [1]."
+            coverage: partial
+            watch:
+              - n: 1
+                segment_id: 7003
+                source_id: 15
+                collection_id: yale
+                source_type: youtube
+                source_title: Testing policy Q&A
+                host: Yale Admissions
+                published_at: "2024-02-20"
+                start_s: 180
+                end_s: 240
+                anchor: null
+                label: "3:00–4:00"
+                snippet: "...for the class entering in the fall we will require testing..."
+                deep_link: https://youtu.be/def456UVW11?t=180
+                app_link: /sources/15?t=180
+                stale: true
+            stale_warning: "Source from 2024-02-20 is older than 18 months: verify on the official Yale admissions site."
+            error: null
+
+    NoteExample:
+      value:
+        id: 4
+        collection_id: yale
+        question: What does Yale look for in the why-this-major short answer?
+        answer_md: "Officers want the origin of your interest, told through one specific experience [1]."
+        coverage: strong
+        citations: []
+        comment: Use for Aksh's draft
+        created_at: "2026-10-11T15:10:00Z"
