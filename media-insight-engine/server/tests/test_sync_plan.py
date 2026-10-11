@@ -62,9 +62,9 @@ def test_invalid_duplicate_day2_and_bad_youtube_are_logged(config_dir):
     actions = [(s.action, s.reason.split(" (")[0]) for s in steps]
     assert actions[0] == ("queued", "New URL")
     assert actions[1] == ("failed", "Duplicate of entry 1 in the file")
-    assert actions[2] == ("failed", "Type 'audio' is not supported until Day 2")
-    assert actions[3] == ("failed", "Type 'pdf' is not supported until Day 2")
+    assert (actions[2], steps[2].type) == (("queued", "New URL"), "audio")      # Day 2: supported
+    assert (actions[3], steps[3].type) == (("queued", "New URL"), "pdf")
     assert actions[4] == ("failed", "Not a YouTube video URL")
     assert actions[5][0] == "failed" and actions[5][1].startswith("Invalid URL")
     assert actions[6][0] == "failed" and steps[6].url == "(no url)"
-    assert all(s.op == "none" for s in steps[1:])
+    assert all(s.op == "none" for s in steps[4:]) and steps[1].op == "none"

@@ -71,7 +71,9 @@ How each URL is decided:
 | yes | yes | `archived` | un-archive, then the rows above | "Restored" + state |
 | no | yes | not archived | `archived = true` | "Removed from yale.yaml" |
 | yes, but invalid | — | — | nothing | the validation message |
-| yes, Day-2 type | — | — | nothing | "Type 'audio' is not supported until Day 2" |
+| yes, Spotify URL | — | — | nothing | "Spotify audio is DRM-protected: use the show's RSS feed instead" |
+| yes, `rss` feed | — | — | a `feed` line, then one line per selected episode (each decided by the rows above) | "Feed read: 3 of 57 episodes selected (latest 3)" |
+| no, but its feed is still listed | yes | episode | nothing (kept) | — |
 
 Because of these rules, running sync twice in a row gives "skipped" for everything (AC-9). Nothing is deleted, and nothing is left out of the log (FR-1.4).
 
@@ -97,8 +99,14 @@ sequenceDiagram
     alt type = youtube
         W->>YT: metadata (yt-dlp, no download): title, channel, date, duration
         W->>YT: captions (manual English first, else auto-generated)
-        Note over W: no captions → failed "No captions available (audio transcription is Day 2)"
+        Note over W: no captions → falls back to the audio path below (Day 2)
         W->>W: bucket caption lines into 60 s segments (keep raw text + lines)
+    else type = audio (Day 2), or YouTube without captions
+        W->>W: yt-dlp downloads the audio to a temp folder
+        W->>W: faster-whisper → timed lines (progress % written every 5 %)
+        W->>W: same 60 s bucketing as captions; temp file deleted
+    else type = pdf (Day 2)
+        W->>W: download (≤ 50 MB) → pypdf text per page → one segment per page
     else type = web
         W->>WEB: render page in headless Chromium → clean Markdown + metadata
         Note over W: under ~150 words → failed "Page had no readable text"

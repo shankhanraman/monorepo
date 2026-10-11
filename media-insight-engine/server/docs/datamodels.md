@@ -31,10 +31,16 @@ tags: [ea-ed, essays]              # optional: extra tags added to the lens voca
 sources:
   - url: https://www.youtube.com/watch?v=XXXX      # required
     label: Admissions podcast – supplemental essays # optional
-    type: youtube                  # optional: youtube | web (auto-detected); audio | pdf → "Day 2" failure
+    type: youtube                  # optional: youtube | web | audio | pdf | rss (auto-detected when omitted)
     priority: high                 # optional: high | normal (default) | low
     notes: Listen for the why-major part            # optional, for AJ only (not sent to Claude)
+  - url: https://feeds.example.com/inside-yale     # Day 2: a podcast RSS feed
+    type: rss
+    episodes: 10                   # newest N episodes (default 10)
+    match: "essay|testing"          # optional: only episodes whose title matches (regex, any case)
 ```
+
+An `rss` entry is not a source itself. Each selected episode becomes its own `audio` source with `feed_url` set, and its title, date and duration come from the feed. Episodes that later drop out of the newest N are kept. Removing the feed entry archives all its episodes.
 
 Validation (Pydantic, on every sync):
 
@@ -42,7 +48,8 @@ Validation (Pydantic, on every sync):
 |---|---|
 | File missing, not YAML, no `name`, unknown lens | the **whole sync fails** with HTTP 422 and a message naming the file and field |
 | One bad source entry (no `url`, not http(s), unknown `type`, duplicate URL in the file) | only **that entry** is logged as `failed` with the reason; the rest sync normally |
-| Unsupported type on Day 1 (`audio`, `pdf`, or an `.mp3`/RSS/`.pdf` URL) | entry logged `failed: "Type 'audio' is not supported until Day 2"` |
+| Spotify URL (DRM-protected audio) | entry logged `failed: "Spotify audio is DRM-protected: use the show's RSS feed instead"` |
+| Feed can't be read / has no audio episodes | the feed line is logged `failed` with the reason; its earlier episodes stay |
 
 ### 1.2 Lens: `config/lenses/<name>.yaml`
 
@@ -185,13 +192,16 @@ The DDL lives in `server/schema.sql`. It is applied at every server start and is
 |---|---|---|
 | `id` | `bigint` identity PK | |
 | `collection_id` | `text` FK → collections | |
-| `type` | `text` | `CHECK (type IN ('youtube','web'))`; Day 2 adds `audio`, `pdf` |
+| `type` | `text` | `CHECK (type IN ('youtube','web','audio','pdf'))` |
 | `url` | `text` not null | **normalized** (2.4) |
 | `ext_id` | `text` | YouTube video id (for the player and `youtu.be` links) |
 | `label`, `priority`, `notes` | `text` | from the YAML, refreshed on every sync |
 | `title`, `host` | `text` | from metadata (channel / site name) |
 | `published_at` | `date` | null = unknown (treated as possibly stale) |
-| `duration_s` | `int` | videos only |
+| `duration_s` | `int` | video and audio |
+| `progress` | `int` 0–100 | Day 2: speech-to-text progress while `transcribing`; null otherwise |
+| `feed_url` | `text` | Day 2: the RSS feed an episode came from (index); protects it from archiving while the feed is listed |
+| `media_url` | `text` | Day 2: playable audio URL for the in-app player (feed enclosure, direct MP3, or resolved by yt-dlp) |
 | `status` | `text` not null | `queued`, `transcribing`, `analyzing`, `ready`, `failed` (`CHECK`) |
 | `error` | `text` | human-readable reason when `failed` |
 | `archived` | `bool` not null default false | removed from the YAML; excluded from retrieval, **never deleted** |
@@ -207,14 +217,14 @@ Constraint: `UNIQUE (collection_id, url)`, the de-duplication rule (FR-2.5). The
 | `id` | `bigint` identity PK | |
 | `source_id` | `bigint` FK → sources `ON DELETE CASCADE` | |
 | `ord` | `int` not null | 0, 1, 2 … within the source; `UNIQUE (source_id, ord)` |
-| `start_s`, `end_s` | `int` not null | **video:** seconds. **web:** section number (`start_s = end_s = ord`) |
-| `anchor` | `text` | web: the section heading |
+| `start_s`, `end_s` | `int` not null | **video / audio:** seconds. **web / pdf:** section number (`start_s = end_s = ord`) |
+| `anchor` | `text` | web: the section heading; pdf: `Page N` |
 | `text` | `text` not null | raw transcript / section text, **never rewritten** |
 | `summary` | `text` | 1–2 sentences (null until analyzed) |
 | `tags` | `text[]` not null default `{}` | subset of `collections.lens_tags` |
 | `embedding` | `vector(384)` | `BAAI/bge-small-en-v1.5`, built from `text` + `summary` |
 | `tsv` | `tsvector` **generated** | `to_tsvector('english', text ‖ ' ' ‖ coalesce(summary,''))`, for keyword search |
-| `snippets` | `jsonb` | video only: the original caption lines `[{start, text}]`. Used to put a key quote on its exact second |
+| `snippets` | `jsonb` | video and audio: the original caption / speech-to-text lines `[{start, text}]`. Used to put a key quote on its exact second |
 
 Indexes: HNSW `embedding vector_cosine_ops`; GIN on `tsv`; GIN on `tags`; btree `(source_id, ord)`.
 
@@ -323,6 +333,7 @@ stateDiagram-v2
     transcribing --> failed: no captions, fetch error, no readable text
     analyzing --> failed: model error or refusal
     failed --> queued: next sync retries it
+    transcribing --> transcribing: progress 0-99 % (audio)
     ready --> ready: sync skips it
     ready --> archived_flag: removed from YAML
     archived_flag --> ready: added back to YAML
@@ -330,6 +341,7 @@ stateDiagram-v2
 ```
 
 - `archived` is a separate flag, so an archived source keeps its last status and its data.
+- Feed episodes are archived only when their feed entry is removed from the YAML (not when they drop out of the newest N).
 - When a `failed` source is retried, its old segments, chapters and quotes are deleted in the same transaction before new ones are written, so a source never has half old and half new data.
 - When the server restarts, sources stuck in `transcribing` or `analyzing` are set back to `queued` and resubmitted.
 
@@ -399,11 +411,13 @@ The finalize step (code, not the model) turns `AnswerDraft` into the API's `AskR
 |---|---|---|
 | YouTube | `https://youtu.be/<ext_id>?t=<start_s>` | `/sources/<id>?t=<start_s>` |
 | Web | `<url>#:~:text=<first ~6 words of the section, URL-encoded>` | `/sources/<id>#seg-<segment_id>` |
+| Audio | `<media_url>#t=<start_s>` (media fragment) | `/sources/<id>?t=<start_s>` (in-app `<audio>`) |
+| PDF | `<url>#page=<N from "Page N">` | `/sources/<id>#seg-<segment_id>` |
 
 Citation and report snapshots *do* store the computed links, so they keep working later.
 
 ## 6. Not stored
-- **Audio or video files:** only captions are fetched (PRD terms-of-use guardrail: personal research, no republishing).
+- **Audio or video files:** captions are fetched; when audio must be transcribed it is downloaded to a temporary folder and deleted right after (PRD terms-of-use guardrail: personal research, no republishing).
 - **API keys:** `ANTHROPIC_API_KEY` is read from the environment only (`.env`, gitignored).
 - **Users or passwords:** single user and no auth on Day 1.
 - **Chat sessions:** the client sends `history` with each question; each answer is stored in `answers`, but there is no session table.

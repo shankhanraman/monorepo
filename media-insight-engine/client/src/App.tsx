@@ -31,6 +31,15 @@ export default function App() {
   }, []);
   useEffect(load, [load]);
 
+  // Background refresh after a sync: keep the current list (and no banner) if it fails.
+  const reloadCollections = useCallback(
+    () =>
+      listCollections().then(setCollections, () => {
+        /* the list on screen stays usable; the next reload or page load retries */
+      }),
+    [],
+  );
+
   const routeCid = useMatch('/c/:cid/*')?.params.cid ?? null;
   const cid = routeCid ?? lastCid ?? collections?.[0]?.id ?? null;
 
@@ -62,7 +71,12 @@ export default function App() {
         )}
         <Routes>
           <Route path="/" element={<Home collections={collections} />} />
-          <Route path="/c/:cid" element={<CollectionLayout collections={collections} onSelect={setLastCid} />}>
+          <Route
+            path="/c/:cid"
+            element={
+              <CollectionLayout collections={collections} onSelect={setLastCid} reloadCollections={reloadCollections} />
+            }
+          >
             <Route index element={<Navigate to="sources" replace />} />
             <Route path="sources" element={<SourcesPage />} />
             <Route path="ask" element={<AskPage />} />

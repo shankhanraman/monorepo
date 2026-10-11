@@ -92,7 +92,8 @@ def citation(n: int, h: dict, stale: bool) -> dict:
         "start_s": h["start_s"], "end_s": h["end_s"], "anchor": h["anchor"],
         "label": position_label(h["type"], h["start_s"], h["end_s"], h["anchor"]),
         "snippet": snippet(h["text"]),
-        "deep_link": deep_link({"type": h["type"], "ext_id": h["ext_id"], "url": h["url"]}, h["start_s"], h["text"]),
+        "deep_link": deep_link({"type": h["type"], "ext_id": h["ext_id"], "url": h["url"], "media_url": h.get("media_url")},
+                               h["start_s"], h["text"], h["anchor"]),
         "app_link": app_link({"type": h["type"], "id": h["source_id"]}, h["start_s"], h["segment_id"]),
         "stale": stale,
     }

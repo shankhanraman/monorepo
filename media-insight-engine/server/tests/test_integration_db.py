@@ -38,7 +38,7 @@ def cleanup():
 def api(config_dir, monkeypatch):
     monkeypatch.setattr(settings, "config_dir", config_dir)
     queued = []
-    monkeypatch.setattr(jobs, "submit_ingest", queued.append)
+    monkeypatch.setattr(jobs, "submit_ingest", lambda source_id, source_type=None: queued.append((source_id, source_type)))
     write(config_dir / "collections" / f"{A}.yaml", f"""\
         name: Test Yale
         lens: test-lens
@@ -48,6 +48,7 @@ def api(config_dir, monkeypatch):
             priority: high
           - url: {YT}bbbbbbbbbbb
           - url: https://example.com/episode.mp3
+          - url: https://open.spotify.com/episode/abc
     """)
     write(config_dir / "collections" / f"{B}.yaml", f"name: Test MIT\nlens: test-lens\nsources:\n  - url: {YT}ccccccccccc\n")
     cleanup()
@@ -59,20 +60,20 @@ def api(config_dir, monkeypatch):
 
 def test_sync_is_idempotent_and_archives(api, config_dir):
     log = api.post(f"/sync?collection={A}").json()
-    assert log["summary"] == {"queued": 2, "skipped": 0, "failed": 1, "archived": 0}
-    assert len(api.queued) == 2
-    assert api.post(f"/sync?collection={A}").json()["summary"] == {"queued": 0, "skipped": 2, "failed": 1, "archived": 0}
+    assert log["summary"] == {"queued": 3, "skipped": 0, "failed": 1, "archived": 0}
+    assert sorted(t for _, t in api.queued) == ["audio", "youtube", "youtube"]   # audio goes to its own pool
+    assert api.post(f"/sync?collection={A}").json()["summary"] == {"queued": 0, "skipped": 3, "failed": 1, "archived": 0}
 
     write(config_dir / "collections" / f"{A}.yaml", f"name: Test Yale\nlens: test-lens\nsources:\n  - url: {YT}bbbbbbbbbbb\n")
     log = api.post(f"/sync?collection={A}").json()
-    assert log["summary"]["archived"] == 1
+    assert log["summary"]["archived"] == 2
     assert api.get(f"/collections/{A}/sync-log").json()["id"] == log["id"]
     sources = api.get(f"/collections/{A}/sources").json()
     assert [s["url"] for s in sources] == [f"{YT}bbbbbbbbbbb"]
-    assert len(api.get(f"/collections/{A}/sources?include_archived=true").json()) == 2
+    assert len(api.get(f"/collections/{A}/sources?include_archived=true").json()) == 3
 
     cols = {c["id"]: c for c in api.get("/collections").json()}
-    assert cols[A]["source_counts"] == {"total": 1, "ready": 0, "in_progress": 1, "failed": 0, "archived": 1}
+    assert cols[A]["source_counts"] == {"total": 1, "ready": 0, "in_progress": 1, "failed": 0, "archived": 2}
     assert api.post("/sync?collection=nope").status_code == 404
     write(config_dir / "collections" / f"{A}.yaml", "name: Broken\nlens: missing-lens\n")
     assert api.post(f"/sync?collection={A}").status_code == 422
@@ -108,6 +109,9 @@ def test_source_detail_banks_and_notes(api):
     src = make_ready(A, "Officers want curiosity.")
     detail = api.get(f"/sources/{src}").json()
     assert detail["segments"][0]["deep_link"] == "https://youtu.be/aaaaaaaaaaa?t=720"
+    assert (detail["stale"], detail["progress"], detail["media_url"]) == (False, None, None)  # published 2026-01-01
+    undated = [s for s in api.get(f"/collections/{A}/sources").json() if s["id"] != src]
+    assert undated and all(s["stale"] for s in undated)                                    # no date → stale
     assert api.get("/sources/999999999").status_code == 404
 
     bank = api.post(f"/collections/{A}/question-banks", json={"name": "B", "questions": [" Why major? ", "Why major?"]})
@@ -115,6 +119,16 @@ def test_source_detail_banks_and_notes(api):
     assert api.get(f"/collections/{A}/question-banks").json()[0]["latest_run_id"] is None
     assert api.post(f"/collections/{A}/question-banks", json={"name": "B", "questions": []}).status_code == 422
     assert api.post("/question-banks/999999999/run").status_code == 404
+
+    # A finished run (inserted directly: no model calls) exports as Markdown and PDF.
+    with pool().connection() as conn:
+        run_id = conn.execute("INSERT INTO bank_runs (bank_id, status, done, total, finished_at) "
+                              "VALUES (%s, 'done', 1, 1, now()) RETURNING id", (bank.json()["id"],)).fetchone()["id"]
+        conn.execute("INSERT INTO answers (collection_id, run_id, item_index, question, status, answer_md, coverage) "
+                     "VALUES (%s, %s, 0, 'Why major?', 'done', 'Be specific.', 'partial')", (A, run_id))
+    assert "## 1. Why major?" in api.get(f"/bank-runs/{run_id}/report.md").text
+    pdf = api.get(f"/bank-runs/{run_id}/report.pdf")
+    assert pdf.status_code == 200 and pdf.headers["content-type"] == "application/pdf" and pdf.content[:4] == b"%PDF"
 
     note = {"collection_id": A, "question": "q", "answer_md": "a [1]", "coverage": "strong", "citations": []}
     created = api.post("/notes", json=note)

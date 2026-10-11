@@ -9,21 +9,29 @@
   margin: 0.4rem 0 0.15rem;
   font-size: 1.05rem;
 }
+.source-row .slim-progress {
+  display: block;
+  width: 100%;
+  max-width: 16rem;
+  height: 0.4rem;
+  margin-top: 0.35rem;
+}
 .source-row .error {
   margin: 0.25rem 0 0;
 }
 
-.status-ready {
+/* .badge.status-*: index.css (with the plain .badge colours) loads after this file, so a single class would lose. */
+.badge.status-ready {
   background: var(--ok-soft);
   color: var(--ok);
 }
-.status-failed {
+.badge.status-failed {
   background: var(--danger-soft);
   color: var(--danger);
 }
-.status-queued,
-.status-transcribing,
-.status-analyzing {
+.badge.status-queued,
+.badge.status-transcribing,
+.badge.status-analyzing {
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
@@ -69,10 +77,16 @@
   font-size: 0.88rem;
   color: var(--muted);
 }
-.sync-failed .sync-icon,
-.sync-failed .sync-reason {
+.sync-failed > .sync-entry .sync-icon,
+.sync-failed > .sync-entry .sync-reason {
   color: var(--danger);
 }
-.sync-skipped .sync-icon {
+.sync-skipped > .sync-entry .sync-icon {
   color: var(--ok);
+}
+/* Episodes read from an RSS feed, indented under the feed line. */
+.sync-episodes {
+  margin-left: 0.7rem;
+  padding-left: 0.9rem;
+  border-left: 2px solid var(--border);
 }

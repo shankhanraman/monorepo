@@ -75,3 +75,16 @@ def export_markdown(run_id: int):
     filename = f"{run['collection_id']}-report-{run_id}.md"
     return Response(banks.report_markdown(run), media_type="text/markdown; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/bank-runs/{run_id}/report.pdf", response_class=Response,
+            responses={200: {"content": {"application/pdf": {}}}})
+def export_pdf(run_id: int):
+    run = banks.get_run(run_id)
+    if not run:
+        raise HTTPException(404, "Not found")
+    if run["status"] == "running":
+        raise HTTPException(409, f"Run {run_id} is still running")
+    filename = f"{run['collection_id']}-report-{run_id}.pdf"
+    return Response(banks.report_pdf(run), media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})

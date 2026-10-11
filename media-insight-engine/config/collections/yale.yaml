@@ -1,18 +1,28 @@
 # One file per college (PRD FR-1). Edit, then: make sync COLLECTION=yale
 #   (Windows: docker compose exec server python -m app.sync yale)
+# URLs verified on 2026-10-11 (HTTP 200; PDFs checked for a real %PDF header).
 name: Yale
-lens: undergrad-admissions        # shared lens: config/lenses/undergrad-admissions.yaml
+lens: undergrad-admissions
 focus_note: Early Action, class of 2031
 sources:
-  # --- YouTube videos (captions are used; audio-only podcasts are Day 2) ---
-  # AJ: add 3+ Yale admissions videos here, e.g. episodes of "Inside the Yale Admissions Office"
+  # AJ: add admissions YouTube videos / podcast feeds here, e.g.
   # - url: https://www.youtube.com/watch?v=VIDEO_ID
-  #   label: Admissions podcast – supplemental essays
-  #   priority: high
 
-  # --- Web pages ---
   - url: https://admissions.yale.edu/essay-topics
-    label: Yale essay topics and short answer questions
+    label: "Yale essay topics and short answer questions"
     priority: high
   - url: https://admissions.yale.edu/podcast
-    label: Inside the Yale Admissions Office – podcast page
+    label: "Inside the Yale Admissions Office – podcast page"
+  - url: https://admissions.yale.edu/standardized-testing
+    label: "Yale standardized testing"
+  - url: https://admissions.yale.edu/what-yale-looks-for
+    label: "What Yale looks for"
+  - url: https://oir.yale.edu/sites/default/files/yale_cds_2025-26_md_20260616.pdf
+    label: "Yale Common Data Set 2025-26"
+
+  # Official podcast feed (56 episodes). Each episode takes ~12-20 min to transcribe locally,
+  # so start with 1 and raise `episodes` once you've seen it work.
+  - url: https://yalepodcasts.blubrry.net/category/inside_yale_admissions/feed/podcast/
+    label: Inside the Yale Admissions Office (podcast)
+    type: rss
+    episodes: 1

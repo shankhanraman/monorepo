@@ -5,7 +5,7 @@ import anthropic
 from psycopg.types.json import Jsonb
 
 from app.db import pool
-from app.services import analyze, embed, segment, web, youtube
+from app.services import analyze, audio, embed, pdf, segment, web, youtube
 from app.services.llm import ModelRefusal, ModelUnavailable, api_error_message
 from app.services.youtube import IngestError
 
@@ -14,8 +14,13 @@ log = logging.getLogger("ingest")
 
 def _status(source_id: int, status: str, error: str | None = None) -> None:
     with pool().connection() as conn:
-        conn.execute("UPDATE sources SET status = %s, error = %s, updated_at = now() WHERE id = %s",
+        conn.execute("UPDATE sources SET status = %s, error = %s, progress = NULL, updated_at = now() WHERE id = %s",
                      (status, error, source_id))
+
+
+def _progress(source_id: int, pct: int) -> None:
+    with pool().connection() as conn:
+        conn.execute("UPDATE sources SET progress = %s, updated_at = now() WHERE id = %s", (pct, source_id))
 
 
 def ingest_source(source_id: int) -> None:
@@ -28,16 +33,28 @@ def ingest_source(source_id: int) -> None:
         return
     _status(source_id, "transcribing")
     try:
-        if src["type"] == "youtube":
+        kind, report = src["type"], (lambda pct: _progress(source_id, pct))
+        if kind == "youtube":
             meta = youtube.metadata(src["ext_id"])
-            segs = segment.by_time(youtube.captions(src["ext_id"]), src["segment_seconds"], meta.get("duration_s"))
+            try:
+                lines = youtube.captions(src["ext_id"])
+            except youtube.NoCaptions:  # FR-2.2: no captions → download the audio and transcribe it
+                audio_meta, lines = audio.fetch(f"https://www.youtube.com/watch?v={src['ext_id']}", report)
+                meta = {**audio_meta, **{k: v for k, v in meta.items() if v is not None}, "media_url": None}
+            segs = segment.by_time(lines, src["segment_seconds"], meta.get("duration_s"))
+        elif kind == "audio":
+            meta, lines = audio.fetch(src["media_url"] or src["url"], report)
+            segs = segment.by_time(lines, src["segment_seconds"], src["duration_s"] or meta.get("duration_s"))
+        elif kind == "pdf":
+            meta, pages = pdf.fetch(src["url"])
+            segs = segment.by_page(pages)
         else:
             meta, markdown = web.fetch(src["url"])
             segs = segment.by_heading(markdown)
         if not segs:
             raise IngestError("Nothing to index after cleaning the text")
         _save_segments(source_id, meta, segs)
-        src.update({k: v for k, v in meta.items() if v is not None})
+        src.update({k: v for k, v in meta.items() if v is not None and not src.get(k)})
 
         result, model = analyze.run(src, src["lens_text"], src["lens_tags"], segs)
         info = result["segments"]
@@ -71,11 +88,14 @@ def _save_segments(source_id: int, meta: dict, segs: list[segment.Seg]) -> None:
                    VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 [(source_id, s.ord, s.start_s, s.end_s, s.anchor, s.text, Jsonb(s.lines) if s.lines else None)
                  for s in segs])
+        # What's already known wins (e.g. an RSS feed's episode title beats the MP3 file name).
         conn.execute(
-            """UPDATE sources SET title = coalesce(%s, title), host = coalesce(%s, host),
-                 published_at = coalesce(%s, published_at), duration_s = coalesce(%s, duration_s),
-                 status = 'analyzing', error = NULL, updated_at = now() WHERE id = %s""",
-            (meta.get("title"), meta.get("host"), meta.get("published_at"), meta.get("duration_s"), source_id))
+            """UPDATE sources SET title = coalesce(title, %s), host = coalesce(host, %s),
+                 published_at = coalesce(published_at, %s), duration_s = coalesce(duration_s, %s),
+                 media_url = coalesce(media_url, %s),
+                 status = 'analyzing', progress = NULL, error = NULL, updated_at = now() WHERE id = %s""",
+            (meta.get("title"), meta.get("host"), meta.get("published_at"), meta.get("duration_s"),
+             meta.get("media_url"), source_id))
 
 
 def _save_analysis(source_id: int, segs: list[segment.Seg], result: dict, vectors: list, model: str) -> None:

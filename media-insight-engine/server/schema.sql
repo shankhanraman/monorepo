@@ -1,5 +1,6 @@
 -- Applied at every server start; must stay idempotent. See docs/datamodels.md.
--- ponytail: no migration tool on Day 1; add Alembic once real data needs a schema change.
+-- ponytail: still no migration tool; Day-2 columns are added with idempotent ALTERs below.
+-- Switch to Alembic when a change can't be expressed that way (renames, data migrations).
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS collections (
@@ -18,7 +19,7 @@ CREATE TABLE IF NOT EXISTS collections (
 CREATE TABLE IF NOT EXISTS sources (
     id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     collection_id  text NOT NULL REFERENCES collections(id),
-    type           text NOT NULL CHECK (type IN ('youtube', 'web')),
+    type           text NOT NULL CHECK (type IN ('youtube', 'web', 'audio', 'pdf')),
     url            text NOT NULL,
     ext_id         text,
     label          text,
@@ -56,6 +57,15 @@ CREATE TABLE IF NOT EXISTS segments (
                   to_tsvector('english', text || ' ' || coalesce(summary, ''))) STORED,
     UNIQUE (source_id, ord)
 );
+-- Day 2: podcast audio + PDF sources, transcription progress, RSS feed origin, playable audio URL.
+-- Idempotent ALTERs so databases created on Day 1 keep their data.
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS progress int CHECK (progress BETWEEN 0 AND 100);
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS feed_url text;
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS media_url text;
+ALTER TABLE sources DROP CONSTRAINT IF EXISTS sources_type_check;
+ALTER TABLE sources ADD CONSTRAINT sources_type_check CHECK (type IN ('youtube', 'web', 'audio', 'pdf'));
+CREATE INDEX IF NOT EXISTS sources_feed_idx ON sources (feed_url) WHERE feed_url IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS segments_embedding_idx ON segments USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS segments_tsv_idx ON segments USING gin (tsv);
 CREATE INDEX IF NOT EXISTS segments_tags_idx ON segments USING gin (tags);

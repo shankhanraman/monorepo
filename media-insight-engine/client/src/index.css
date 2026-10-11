@@ -189,6 +189,11 @@ fieldset.scope label {
   background: var(--danger-soft);
   color: var(--danger);
 }
+.badge.stale-badge {
+  background: var(--amber-soft);
+  color: var(--amber);
+  cursor: help;
+}
 
 .banner {
   border-radius: var(--radius);

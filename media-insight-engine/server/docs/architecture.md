@@ -72,7 +72,7 @@ flowchart TB
 | Container | Image / base | Port (host) | State |
 |---|---|---|---|
 | `db` | `pgvector/pgvector:pg17` | 5437 → 5432 | named volume `pgdata` |
-| `server` | `python:3.12-slim` + Chromium (Crawl4AI) + fastembed model baked in | 8003 | stateless (everything in `db`) |
+| `server` | `python:3.12-slim` + Chromium (Crawl4AI, also prints report PDFs) + fastembed model + faster-whisper `large-v3-turbo` baked in | 8003 | stateless (everything in `db`) |
 | `client` | `node:22` (Vite dev server on Day 1) | 5176 | none |
 
 The ports avoid the PostgreSQL 17 already running on the host (5432) and the other labs in this monorepo.
@@ -96,6 +96,9 @@ server/
 │       ├── jobs.py            # ThreadPoolExecutor, status updates, crash recovery
 │       ├── youtube.py         # captions (youtube-transcript-api) + metadata (yt-dlp)
 │       ├── web.py             # Crawl4AI → clean Markdown → sections
+│       ├── feeds.py           # Day 2: podcast RSS → episodes (defusedxml)
+│       ├── audio.py           # Day 2: yt-dlp download → faster-whisper → timed lines, progress %
+│       ├── pdf.py             # Day 2: pypdf text per page
 │       ├── segment.py         # captions → N-second windows; Markdown → sections
 │       ├── analyze.py         # Opus call + output checks (chapters, tags, quotes)
 │       ├── embed.py           # fastembed, batch embedding
@@ -128,6 +131,9 @@ Rules:
 | D10 | **Only listed URLs** are fetched; no link-following | PRD: AJ controls every source; keeps sync predictable | Deep crawl (possible later via a `crawl:` option) |
 | D11 | **Chat state lives in the client** (`history` sent with each question) | Stateless server, nothing to expire or clean up | LangGraph checkpointer / server sessions |
 | D12 | **Citations stored as snapshots** in answers and notes | Saved answers keep working after re-ingest or archive | Foreign keys only |
+| D13 | **Local speech-to-text (faster-whisper large-v3-turbo, CPU int8)**, one transcription at a time in its own worker pool | Private and free; best accuracy on names and numbers. Its own pool so long jobs never block web/PDF/video ingest | Cloud STT (fast, but sends audio out and needs a key); `small.en` (faster, less accurate; one env var away) |
+| D14 | **An RSS entry expands into one source per episode** | Episodes are what gets cited and played; the feed is just a list | One source per feed |
+| D15 | **Report PDF printed by the image's Chromium** | Already installed for Crawl4AI: no new dependency, real links in the PDF | WeasyPrint / ReportLab |
 
 ## 7. Grounding guardrails
 
@@ -151,6 +157,8 @@ Rules:
 | Analysis of a 35-min video (~35 segments) | ~60–120 s | **one** Opus call, structured output |
 | Embeddings | < 2 s | local, batched |
 | **Source ready** | **< 5 min (target ~2 min)** | 2 ingest workers, so several sources run side by side |
+| Podcast episode (35 min) | **~12–20 min**: does **not** meet the PRD target | download (~10 s) + faster-whisper large-v3-turbo on CPU + analysis. `WHISPER_MODEL=small.en` in `.env` brings it to ~5–6 min |
+| PDF (40 pages) | ~1–2 min | download + pypdf + one analysis call |
 | Retrieval | < 200 ms | HNSW + GIN indexes |
 | Answer | 3–6 s | Sonnet 5.5, low effort, top-10 segments |
 | Weak answer with retry | +3–5 s | one rewrite + second retrieval, at most once |
@@ -187,9 +195,9 @@ Limits that are fine for Day 1 but known:
 
 | Later feature | Where it plugs in |
 |---|---|
-| Podcasts (MP3/RSS) + faster-whisper | new `services/audio.py` producing the same timestamped caption lines; `type='audio'`; in-app audio player for `app_link` |
-| PDF ingest | new `services/pdf.py` producing sections like `web.py`; `type='pdf'` |
-| PDF export | server-side render of the same report data |
+| ~~Podcasts (MP3/RSS) + faster-whisper~~ | **built on Day 2** (`feeds.py`, `audio.py`, audio pool, in-app player) |
+| ~~PDF ingest~~ | **built on Day 2** (`pdf.py`, page segments, `#page=` links) |
+| ~~PDF export~~ | **built on Day 2** (`GET /bank-runs/{id}/report.pdf`) |
 | More colleges | new YAML files only, no code changes |
 | Re-analyze on Lens change | compare `collections.lens_text` with the stored analysis lens; re-queue the affected sources |
 | Read-only view for Aksh | basic auth plus a read-only role in the client |

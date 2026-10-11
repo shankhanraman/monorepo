@@ -1,15 +1,18 @@
 openapi: 3.1.0
 info:
   title: Media Insight Engine API
-  version: 0.1.0
+  version: 0.2.0
   description: |
-    Day-1 API for the Admissions Media Insight Engine (PRD FR-1 … FR-5).
+    Day-1 + Day-2 API for the Admissions Media Insight Engine (PRD FR-1 … FR-5).
+    Day 2 adds podcast audio (RSS feeds, MP3, speech-to-text), PDF sources, transcription progress,
+    a source-level stale flag and the PDF report export.
     Readable guide with curl examples and polling rules: api-contract.md (same folder).
 
     Conventions
     - Collection ids are slugs from the config file name (`yale`, `mit`). `all` is accepted only by the ask endpoint.
     - All other ids are integers.
-    - Times are in seconds (`start_s`, `end_s`, `ts_s`). For web sources these hold the section order number, not seconds.
+    - Times are in seconds (`start_s`, `end_s`, `ts_s`) for `youtube` and `audio` sources. For `web` and `pdf` sources
+      they hold the section order number, not seconds; show `label` / `anchor` instead.
     - Dates are ISO 8601. `published_at` is a date (`YYYY-MM-DD`), other timestamps are date-times in UTC.
     - Errors: `{"detail": "message"}`; request validation errors (422) use FastAPI's `{"detail": [ … ]}` list.
 # Day 1 has no authentication (PRD: single user, local). Basic auth arrives with hosting.
@@ -144,7 +147,9 @@ paths:
       tags: [sources]
       operationId: listSources
       summary: Sources of a collection with live status (FR-2.4)
-      description: Poll every 3 s while any source is `queued`, `transcribing` or `analyzing`.
+      description: |
+        Poll every 3 s while any source is `queued`, `transcribing` or `analyzing`.
+        Audio sources report `progress` (0–100) while transcribing; a long episode can take 10–20 minutes.
       parameters:
         - $ref: "#/components/parameters/CollectionId"
         - name: include_archived
@@ -175,6 +180,9 @@ paths:
                   archived: false
                   ingested_at: "2026-10-11T14:07:02Z"
                   segment_count: 36
+                  progress: null
+                  stale: false
+                  feed_url: null
                 - id: 13
                   collection_id: yale
                   type: web
@@ -190,6 +198,9 @@ paths:
                   archived: false
                   ingested_at: null
                   segment_count: 0
+                  progress: null
+                  stale: true
+                  feed_url: null
                 - id: 14
                   collection_id: yale
                   type: youtube
@@ -201,10 +212,49 @@ paths:
                   published_at: "2024-11-02"
                   duration_s: 3605
                   status: failed
-                  error: "No captions available (audio transcription is Day 2)"
+                  error: "Video unavailable (private, removed or region-blocked)"
                   archived: false
                   ingested_at: null
                   segment_count: 0
+                  progress: null
+                  stale: true
+                  feed_url: null
+                - id: 21
+                  collection_id: yale
+                  type: audio
+                  url: https://traffic.megaphone.fm/YALE1234567890.mp3
+                  label: "Episode 42: Testing policy"
+                  priority: normal
+                  title: "Episode 42: Testing policy"
+                  host: Inside the Yale Admissions Office
+                  published_at: "2026-09-01"
+                  duration_s: 2160
+                  status: transcribing
+                  error: null
+                  archived: false
+                  ingested_at: null
+                  segment_count: 0
+                  progress: 42
+                  stale: false
+                  feed_url: https://feeds.megaphone.fm/insideyaleadmissions
+                - id: 22
+                  collection_id: yale
+                  type: pdf
+                  url: https://oir.yale.edu/common-data-set-2025-2026.pdf
+                  label: Yale Common Data Set 2025-26
+                  priority: normal
+                  title: Common Data Set 2025-2026
+                  host: oir.yale.edu
+                  published_at: "2026-03-10"
+                  duration_s: null
+                  status: ready
+                  error: null
+                  archived: false
+                  ingested_at: "2026-10-12T09:15:40Z"
+                  segment_count: 41
+                  progress: null
+                  stale: false
+                  feed_url: null
         "404": { $ref: "#/components/responses/NotFound" }
 
   /sources/{source_id}:
@@ -220,44 +270,53 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SourceDetail" }
-              example:
-                id: 12
-                collection_id: yale
-                type: youtube
-                url: https://www.youtube.com/watch?v=abc123XYZ00
-                ext_id: abc123XYZ00
-                label: Admissions podcast – supplemental essays
-                priority: high
-                title: "Inside the Yale Admissions Office: Supplemental Essays"
-                host: Yale Admissions
-                published_at: "2025-09-15"
-                duration_s: 2112
-                status: ready
-                error: null
-                archived: false
-                ingested_at: "2026-10-11T14:07:02Z"
-                segment_count: 36
-                overview: "Two Yale admissions officers explain how the supplemental essays are read. Aimed at applicants and counselors; covers the short answers, the 'why Yale' and 'why this major' prompts, and common mistakes. Useful for planning every Yale-specific essay."
-                chapters:
-                  - { id: 101, start_s: 0, end_s: 570, title: Introduction and how files are read, summary: "The hosts introduce themselves and describe the committee process. Essays are read for voice, not polish." }
-                  - { id: 102, start_s: 570, end_s: 1065, title: Supplemental essays, summary: "Each short answer should add something new. Officers want specifics about academic interests and community." }
-                segments:
-                  - id: 5001
-                    ord: 12
-                    start_s: 720
-                    end_s: 780
-                    anchor: null
-                    text: "so when you write about why you want to study a major, we really want to hear what got you curious in the first place..."
-                    summary: Officers want the origin of the interest in the major, told through a specific experience.
-                    tags: [essays, why-major]
-                    deep_link: https://youtu.be/abc123XYZ00?t=720
-                key_quotes:
-                  - id: 301
-                    segment_id: 5001
-                    ts_s: 731
-                    quote: "we really want to hear what got you curious in the first place"
-                    is_advice: true
-                    deep_link: https://youtu.be/abc123XYZ00?t=731
+              examples:
+                youtube:
+                  summary: Video (embedded YouTube player)
+                  value:
+                    id: 12
+                    collection_id: yale
+                    type: youtube
+                    url: https://www.youtube.com/watch?v=abc123XYZ00
+                    ext_id: abc123XYZ00
+                    label: Admissions podcast – supplemental essays
+                    priority: high
+                    title: "Inside the Yale Admissions Office: Supplemental Essays"
+                    host: Yale Admissions
+                    published_at: "2025-09-15"
+                    duration_s: 2112
+                    status: ready
+                    error: null
+                    archived: false
+                    ingested_at: "2026-10-11T14:07:02Z"
+                    segment_count: 36
+                    progress: null
+                    stale: false
+                    feed_url: null
+                    media_url: null
+                    overview: "Two Yale admissions officers explain how the supplemental essays are read. Aimed at applicants and counselors; covers the short answers, the 'why Yale' and 'why this major' prompts, and common mistakes. Useful for planning every Yale-specific essay."
+                    chapters:
+                      - { id: 101, start_s: 0, end_s: 570, title: Introduction and how files are read, summary: "The hosts introduce themselves and describe the committee process. Essays are read for voice, not polish." }
+                      - { id: 102, start_s: 570, end_s: 1065, title: Supplemental essays, summary: "Each short answer should add something new. Officers want specifics about academic interests and community." }
+                    segments:
+                      - id: 5001
+                        ord: 12
+                        start_s: 720
+                        end_s: 780
+                        anchor: null
+                        text: "so when you write about why you want to study a major, we really want to hear what got you curious in the first place..."
+                        summary: Officers want the origin of the interest in the major, told through a specific experience.
+                        tags: [essays, why-major]
+                        deep_link: https://youtu.be/abc123XYZ00?t=720
+                    key_quotes:
+                      - id: 301
+                        segment_id: 5001
+                        ts_s: 731
+                        quote: "we really want to hear what got you curious in the first place"
+                        is_advice: true
+                        deep_link: https://youtu.be/abc123XYZ00?t=731
+                audio:
+                  $ref: "#/components/examples/SourceAudio"
         "404": { $ref: "#/components/responses/NotFound" }
 
   /collections/{collection_id}/ask:
@@ -469,6 +528,32 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
               example: { detail: "Run 7 is still running" }
 
+  /bank-runs/{run_id}/report.pdf:
+    get:
+      tags: [question-banks]
+      operationId: exportBankRunPdf
+      summary: Report as a PDF file (FR-5.4, Day 2)
+      description: Same content as the Markdown export, with clickable links. Takes a few seconds to generate.
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: PDF download (`Content-Disposition attachment; filename="yale-report-7.pdf"`)
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              example: attachment; filename="yale-report-7.pdf"
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Run not finished yet
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: "Run 7 is still running" }
+
   /notes:
     get:
       tags: [notes]
@@ -595,8 +680,12 @@ components:
 
     SourceType:
       type: string
-      enum: [youtube, web]
-      description: Day 1 types. `audio` and `pdf` arrive on Day 2.
+      enum: [youtube, web, audio, pdf]
+      description: |
+        youtube – video; captions, or speech-to-text when it has none. Time-based segments.
+        web     – web page; one segment per section.
+        audio   – podcast episode (MP3, RSS feed episode, or a podcast page yt-dlp supports); speech-to-text, time-based segments.
+        pdf     – PDF document; one segment per page (long pages split).
 
     SourceStatus:
       type: string
@@ -636,8 +725,10 @@ components:
 
     SyncAction:
       type: string
-      enum: [queued, skipped, failed, archived]
+      enum: [queued, skipped, failed, archived, feed]
       description: |
+        feed     – an RSS feed entry was read; reason says how many episodes were selected. Its episodes follow
+                   as their own lines (with feed_url set). Feed lines are not counted in the summary.
         queued   – new URL or failed before; ingest started.
         skipped  – already ready or already being ingested (reason says which).
         failed   – invalid entry or unsupported type; nothing ingested (reason says why).
@@ -645,13 +736,14 @@ components:
 
     SyncEntry:
       type: object
-      required: [url, label, action, reason, source_id]
+      required: [url, label, action, reason, source_id, feed_url]
       properties:
         url: { type: string, description: Normalized URL }
         label: { type: [string, "null"] }
         action: { $ref: "#/components/schemas/SyncAction" }
         reason: { type: string }
-        source_id: { type: [integer, "null"], description: Null when the entry failed validation }
+        source_id: { type: [integer, "null"], description: "Null when the entry failed validation, and for feed lines" }
+        feed_url: { type: [string, "null"], description: The RSS feed an episode came from; null otherwise }
 
     SyncLog:
       type: object
@@ -674,7 +766,7 @@ components:
 
     SourceSummary:
       type: object
-      required: [id, collection_id, type, url, label, priority, title, host, published_at, duration_s, status, error, archived, ingested_at, segment_count]
+      required: [id, collection_id, type, url, label, priority, title, host, published_at, duration_s, status, error, archived, ingested_at, segment_count, progress, stale, feed_url]
       properties:
         id: { type: integer }
         collection_id: { type: string }
@@ -683,14 +775,21 @@ components:
         label: { type: [string, "null"], description: From the YAML }
         priority: { $ref: "#/components/schemas/Priority" }
         title: { type: [string, "null"], description: From the source metadata; null until fetched }
-        host: { type: [string, "null"], description: YouTube channel or website name }
+        host: { type: [string, "null"], description: "YouTube channel, podcast show, or website name" }
         published_at: { type: [string, "null"], format: date, description: "Null = date unknown (treat as possibly stale)" }
-        duration_s: { type: [integer, "null"], description: Videos only }
+        duration_s: { type: [integer, "null"], description: Video and audio only }
         status: { $ref: "#/components/schemas/SourceStatus" }
         error: { type: [string, "null"], description: Reason when status is failed }
         archived: { type: boolean }
         ingested_at: { type: [string, "null"], format: date-time, description: When it became ready }
         segment_count: { type: integer }
+        progress:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 100
+          description: Transcription progress while an audio source (or a YouTube video without captions) is `transcribing`; null otherwise
+        stale: { type: boolean, description: "Published longer ago than the collection's stale_after_months (default 18), or date unknown" }
+        feed_url: { type: [string, "null"], description: The RSS feed this episode came from }
 
     Chapter:
       type: object
@@ -706,20 +805,21 @@ components:
       type: object
       required: [id, ord, start_s, end_s, anchor, text, summary, tags, deep_link]
       description: |
-        Video: a time slice (default 60 s). Web: a page section; `start_s`/`end_s` are then the section
-        order number and `anchor` is the section heading.
+        youtube / audio: a time slice (default 60 s).
+        web: a page section; `start_s`/`end_s` are the section order number and `anchor` is the heading.
+        pdf: a page (or part of a long page); `start_s`/`end_s` are the order number and `anchor` is "Page N".
       properties:
         id: { type: integer }
         ord: { type: integer, description: "Position in the source, from 0" }
         start_s: { type: integer }
         end_s: { type: integer }
-        anchor: { type: [string, "null"], description: Section heading (web only) }
+        anchor: { type: [string, "null"], description: "Section heading (web) or Page N (pdf); null for video and audio" }
         text: { type: string, description: Raw transcript / page text (show it so users can check caption errors) }
         summary: { type: string, description: 1–2 sentence minute summary }
         tags:
           type: array
           items: { type: string }
-        deep_link: { type: string, description: "External link to this moment (YouTube ?t= or page #:~:text=)" }
+        deep_link: { type: string, description: "External link: YouTube ?t=, audio file #t=, web page #:~:text=, or PDF #page=" }
 
     KeyQuote:
       type: object
@@ -736,9 +836,10 @@ components:
       allOf:
         - $ref: "#/components/schemas/SourceSummary"
         - type: object
-          required: [ext_id, overview, chapters, segments, key_quotes]
+          required: [ext_id, media_url, overview, chapters, segments, key_quotes]
           properties:
-            ext_id: { type: [string, "null"], description: YouTube video id (for the embedded player); null for web }
+            ext_id: { type: [string, "null"], description: YouTube video id (for the embedded player); null otherwise }
+            media_url: { type: [string, "null"], description: "Playable audio URL for the in-app audio player (audio sources); null otherwise" }
             overview: { type: [string, "null"], description: One paragraph; null until ready }
             chapters:
               type: array
@@ -797,11 +898,11 @@ components:
         published_at: { type: [string, "null"], format: date }
         start_s: { type: integer }
         end_s: { type: integer }
-        anchor: { type: [string, "null"], description: Section heading (web) }
-        label: { type: string, description: 'Ready-to-show position: "12:00–13:00" for video, the section heading for web' }
+        anchor: { type: [string, "null"], description: "Section heading (web) or Page N (pdf)" }
+        label: { type: string, description: 'Ready-to-show position: "12:00–13:00" for video/audio, the heading for web, "Page 3" for pdf' }
         snippet: { type: string, description: Supporting transcript or page text }
-        deep_link: { type: string, description: "Open externally: https://youtu.be/<id>?t=<s> or <url>#:~:text=<first words>" }
-        app_link: { type: string, description: "In-app route: /sources/<id>?t=<s> (web: /sources/<id>#seg-<segment_id>)" }
+        deep_link: { type: string, description: "Open externally: https://youtu.be/<id>?t=<s> · <audio file>#t=<s> · <url>#:~:text=<first words> · <pdf>#page=<n>" }
+        app_link: { type: string, description: "In-app route: /sources/<id>?t=<s> for youtube/audio (plays there); /sources/<id>#seg-<segment_id> for web/pdf" }
         stale: { type: boolean, description: Source older than 18 months or date unknown }
 
     AskResponse:
@@ -914,13 +1015,60 @@ components:
         id: 21
         collection_id: yale
         created_at: "2026-10-11T14:05:40Z"
-        summary: { queued: 1, skipped: 2, failed: 1, archived: 1 }
+        summary: { queued: 2, skipped: 3, failed: 1, archived: 1 }
         entries:
-          - { url: "https://www.youtube.com/watch?v=abc123XYZ00", label: "Admissions podcast – supplemental essays", action: skipped, reason: "Already ready", source_id: 12 }
-          - { url: "https://admissions.yale.edu/essays", label: "Essay prompts page", action: queued, reason: "New URL", source_id: 13 }
-          - { url: "https://www.youtube.com/watch?v=def456UVW11", label: "Testing policy Q&A", action: skipped, reason: "Already being ingested (transcribing)", source_id: 15 }
-          - { url: "https://example.com/episode.mp3", label: "Podcast episode on testing", action: failed, reason: "Type 'audio' is not supported until Day 2", source_id: null }
-          - { url: "https://www.youtube.com/watch?v=old000000AA", label: "Old webinar", action: archived, reason: "Removed from yale.yaml", source_id: 9 }
+          - { url: "https://www.youtube.com/watch?v=abc123XYZ00", label: "Admissions podcast – supplemental essays", action: skipped, reason: "Already ready", source_id: 12, feed_url: null }
+          - { url: "https://admissions.yale.edu/essays", label: "Essay prompts page", action: queued, reason: "New URL", source_id: 13, feed_url: null }
+          - { url: "https://www.youtube.com/watch?v=def456UVW11", label: "Testing policy Q&A", action: skipped, reason: "Already being ingested (transcribing)", source_id: 15, feed_url: null }
+          - { url: "https://open.spotify.com/episode/4abc", label: "Spotify episode", action: failed, reason: "Spotify audio is DRM-protected: use the show's RSS feed instead", source_id: null, feed_url: null }
+          - { url: "https://feeds.megaphone.fm/insideyaleadmissions", label: "Inside the Yale Admissions Office", action: feed, reason: "Feed read: 3 of 57 episodes selected (latest 3)", source_id: null, feed_url: null }
+          - { url: "https://traffic.megaphone.fm/YALE1234567890.mp3", label: "Episode 42: Testing policy", action: queued, reason: "New episode", source_id: 21, feed_url: "https://feeds.megaphone.fm/insideyaleadmissions" }
+          - { url: "https://traffic.megaphone.fm/YALE1234567889.mp3", label: "Episode 41: Supplemental essays", action: skipped, reason: "Already ready", source_id: 20, feed_url: "https://feeds.megaphone.fm/insideyaleadmissions" }
+          - { url: "https://www.youtube.com/watch?v=old000000AA", label: "Old webinar", action: archived, reason: "Removed from yale.yaml", source_id: 9, feed_url: null }
+
+    SourceAudio:
+      summary: Podcast episode (in-app audio player)
+      value:
+        id: 21
+        collection_id: yale
+        type: audio
+        url: https://traffic.megaphone.fm/YALE1234567890.mp3
+        ext_id: null
+        media_url: https://traffic.megaphone.fm/YALE1234567890.mp3
+        label: "Episode 42: Testing policy"
+        priority: normal
+        title: "Episode 42: Testing policy"
+        host: Inside the Yale Admissions Office
+        published_at: "2026-09-01"
+        duration_s: 2160
+        status: ready
+        error: null
+        archived: false
+        ingested_at: "2026-10-12T09:31:05Z"
+        segment_count: 36
+        progress: null
+        stale: false
+        feed_url: https://feeds.megaphone.fm/insideyaleadmissions
+        overview: "Two Yale admissions officers explain how test scores are read in context, what test-optional meant in past cycles and what applicants should submit now."
+        chapters:
+          - { id: 201, start_s: 0, end_s: 420, title: Why testing is back, summary: "The officers explain the policy change and the research behind it." }
+        segments:
+          - id: 7001
+            ord: 3
+            start_s: 180
+            end_s: 240
+            anchor: null
+            text: "for the class entering in the fall we will require testing, and we accept the SAT, ACT, AP or IB scores..."
+            summary: Yale requires testing and accepts several test types.
+            tags: [testing]
+            deep_link: "https://traffic.megaphone.fm/YALE1234567890.mp3#t=180"
+        key_quotes:
+          - id: 401
+            segment_id: 7001
+            ts_s: 184
+            quote: "we will require testing, and we accept the SAT, ACT, AP or IB scores"
+            is_advice: false
+            deep_link: "https://traffic.megaphone.fm/YALE1234567890.mp3#t=184"
 
     AskCovered:
       summary: Covered answer with two citations

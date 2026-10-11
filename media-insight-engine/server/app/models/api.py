@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-SourceType = Literal["youtube", "web"]
+SourceType = Literal["youtube", "web", "audio", "pdf"]
 SourceStatus = Literal["queued", "transcribing", "analyzing", "ready", "failed"]
 Coverage = Literal["strong", "partial", "none"]
 Priority = Literal["high", "normal", "low"]
@@ -32,9 +32,10 @@ class Collection(BaseModel):
 class SyncEntry(BaseModel):
     url: str
     label: str | None
-    action: Literal["queued", "skipped", "failed", "archived"]
+    action: Literal["queued", "skipped", "failed", "archived", "feed"]
     reason: str
     source_id: int | None
+    feed_url: str | None = None  # Day-1 logs in the database don't have it
 
 
 class SyncSummary(BaseModel):
@@ -68,6 +69,9 @@ class SourceSummary(BaseModel):
     archived: bool
     ingested_at: datetime | None
     segment_count: int
+    progress: int | None
+    stale: bool
+    feed_url: str | None
 
 
 class Chapter(BaseModel):
@@ -101,6 +105,7 @@ class KeyQuote(BaseModel):
 
 class SourceDetail(SourceSummary):
     ext_id: str | None
+    media_url: str | None
     overview: str | None
     chapters: list[Chapter]
     segments: list[Segment]

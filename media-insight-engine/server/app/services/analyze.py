@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.services import llm
-from app.services.links import fmt_time
+from app.services.links import TIMED, fmt_time
 from app.services.segment import Seg
 
 
@@ -35,14 +35,18 @@ class SourceAnalysis(BaseModel):
     key_quotes: list[QuoteOut]
 
 
+KINDS = {"youtube": "video transcript", "audio": "podcast transcript (speech-to-text: names and numbers may be misheard)",
+         "web": "web page", "pdf": "PDF document"}
+
+
 def build_user_message(source: dict, segs: list[Seg]) -> str:
-    kind = "video transcript" if source["type"] == "youtube" else "web page"
+    kind = KINDS[source["type"]]
     head = (f"<source>\ntitle: {source.get('title') or source.get('label') or source['url']}\n"
             f"by: {source.get('host') or 'unknown'}\npublished: {source.get('published_at') or 'unknown'}\n"
             f"kind: {kind}\n</source>\n<segments>\n")
     body = []
     for s in segs:
-        where = (f"{fmt_time(s.start_s)}–{fmt_time(s.end_s)}" if source["type"] == "youtube"
+        where = (f"{fmt_time(s.start_s)}–{fmt_time(s.end_s)}" if source["type"] in TIMED
                  else f"section: {s.anchor or '(no heading)'}")
         body.append(f"[{s.ord}] {where}\n{s.text}")
     return head + "\n\n".join(body) + "\n</segments>"

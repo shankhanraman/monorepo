@@ -2,30 +2,20 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { ApiError, ask, listSources } from '../../api';
 import { errorMessage, sourceTitle } from '../../lib/format';
 import { Spinner } from '../../lib/Spinner';
-import type { AskFilters, AskResponse, HistoryTurn, SourceSummary } from '../../types';
+import type { AskFilters, SourceSummary } from '../../types';
 import { useCollection } from '../collections/CollectionLayout';
 import { AnswerView } from './AnswerView';
+import { clearChat, loadChat, saveChat, type ChatTurn as Turn } from './chatStorage';
 import { SaveToNotes } from './SaveToNotes';
 import './ask.css';
 
 const MAX_HISTORY = 10;
 
-interface Turn {
-  id: number;
-  question: string;
-  /** Collection id or `all`. */
-  scope: string;
-  filters: AskFilters | undefined;
-  history: HistoryTurn[];
-  status: 'pending' | 'done' | 'error';
-  response?: AskResponse;
-  error?: string;
-}
-
 export function AskPage() {
   const collection = useCollection();
   const cid = collection.id;
-  const [turns, setTurns] = useState<Turn[]>([]);
+  // Restored from sessionStorage, so the chat survives "Play here" and coming back (the page remounts per college).
+  const [turns, setTurns] = useState<Turn[]>(() => loadChat(cid));
   const [question, setQuestion] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [scopeAll, setScopeAll] = useState(false);
@@ -34,13 +24,19 @@ export function AskPage() {
   const [tags, setTags] = useState<string[]>([]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const nextId = useRef(1);
+  const nextId = useRef(turns.reduce((max, t) => Math.max(max, t.id), 0) + 1);
   const lastTurnRef = useRef<HTMLLIElement>(null);
   const questionId = useId();
 
   useEffect(() => {
-    listSources(cid).then(setSources, () => setSources([]));
+    // Only ready sources can be searched, so only they are offered as filters.
+    listSources(cid).then(
+      (all) => setSources(all.filter((s) => s.status === 'ready')),
+      () => setSources([]),
+    );
   }, [cid]);
+
+  useEffect(() => saveChat(cid, turns), [cid, turns]);
 
   const busy = turns.some((t) => t.status === 'pending');
   const filterCount = sourceIds.length + tags.length + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0);
@@ -99,7 +95,14 @@ export function AskPage() {
       <div className="row ask-head">
         <h2>Ask</h2>
         {turns.length > 0 && (
-          <button type="button" onClick={() => setTurns([])} disabled={busy}>
+          <button
+            type="button"
+            onClick={() => {
+              setTurns([]);
+              clearChat(cid);
+            }}
+            disabled={busy}
+          >
             New chat
           </button>
         )}
@@ -120,7 +123,7 @@ export function AskPage() {
         <summary>Filters{filterCount > 0 && ` (${filterCount} active)`}</summary>
         <fieldset>
           <legend>Sources{scopeAll && ` (${collection.name} only)`}</legend>
-          {sources.length === 0 && <p className="muted">No sources.</p>}
+          {sources.length === 0 && <p className="muted">No ready sources.</p>}
           <div className="check-list">
             {sources.map((s) => (
               <label key={s.id}>

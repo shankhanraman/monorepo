@@ -70,6 +70,21 @@ def by_heading(markdown: str, max_words: int = 350) -> list[Seg]:
     return segs
 
 
+def by_page(pages: list[str], max_words: int = 350) -> list[Seg]:
+    """PDF: one segment per page (anchor "Page N"); long pages are split at line boundaries."""
+    segs: list[Seg] = []
+    for number, text in enumerate(pages, start=1):
+        chunk: list[str] = []
+        for line in (l for l in text.splitlines() if l.strip()):
+            if chunk and len(" ".join(chunk + [line]).split()) > max_words:
+                segs.append(Seg(len(segs), len(segs), len(segs), "\n".join(chunk), f"Page {number}"))
+                chunk = []
+            chunk.append(line)
+        if chunk:
+            segs.append(Seg(len(segs), len(segs), len(segs), "\n".join(chunk), f"Page {number}"))
+    return segs
+
+
 def _is_nav(line: str) -> bool:
     """Menu / breadcrumb lines: nothing but links ('[ Skip to main content](…)')."""
     if "](" not in line:

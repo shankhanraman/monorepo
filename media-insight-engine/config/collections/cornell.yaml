@@ -1,0 +1,17 @@
+# One file per college (PRD FR-1). Edit, then: make sync COLLECTION=cornell
+#   (Windows: docker compose exec server python -m app.sync cornell)
+# URLs verified on 2026-10-11 (HTTP 200; PDFs checked for a real %PDF header).
+name: Cornell
+lens: undergrad-admissions
+focus_note: Early Action, class of 2031
+sources:
+  # AJ: add admissions YouTube videos / podcast feeds here, e.g.
+  # - url: https://www.youtube.com/watch?v=VIDEO_ID
+
+  - url: https://admissions.cornell.edu/how-to-apply/first-year-applicants
+    label: "Cornell first-year applicants (essays are per college)"
+    priority: high
+  - url: https://admissions.cornell.edu/policies/standardized-testing-policy
+    label: "Cornell standardized testing policy"
+  - url: https://irp.cornell.edu/wp-content/uploads/2026/09/Cornell-Common-Data-Set-2025-26.pdf
+    label: "Cornell Common Data Set 2025-26"

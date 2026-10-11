@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { bankRunReportUrl, getBankRun } from '../../api';
+import { bankRunPdfUrl, bankRunReportUrl, getBankRun } from '../../api';
 import { AnswerText } from '../../lib/AnswerText';
 import { CoverageBadge } from '../../lib/CoverageBadge';
 import { errorMessage, formatDateTime, publishedLabel } from '../../lib/format';
+import { appLinkText } from '../../lib/sourceLabels';
 import { usePolling } from '../../lib/usePolling';
 import type { BankRun, ReportItem } from '../../types';
 import { useCollection } from '../collections/CollectionLayout';
@@ -74,14 +75,19 @@ export function BankReportPage() {
 
       <div className="row report-actions no-print">
         {running ? (
-          <span className="muted">Export Markdown is available when the run finishes.</span>
+          <span className="muted">Export Markdown and PDF are available when the run finishes.</span>
         ) : (
-          <a className="button" href={bankRunReportUrl(run.id)}>
-            Export Markdown
-          </a>
+          <>
+            <a className="button" href={bankRunReportUrl(run.id)}>
+              Export Markdown
+            </a>
+            <a className="button" href={bankRunPdfUrl(run.id)}>
+              Export PDF
+            </a>
+          </>
         )}
         <button type="button" onClick={() => window.print()}>
-          Print / PDF
+          Print
         </button>
       </div>
 
@@ -130,7 +136,7 @@ function ReportItemView({ item, idPrefix }: { item: ReportItem; idPrefix: string
                       ({publishedLabel(w.published_at)}){w.stale && ' ⚠'}
                     </span>{' '}
                     <Link className="no-print" to={w.app_link}>
-                      Play here
+                      {appLinkText(w.source_type)}
                     </Link>
                   </li>
                 ))}

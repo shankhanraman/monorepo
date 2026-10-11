@@ -34,6 +34,7 @@ services:
     build: ./client
     environment:
       VITE_API_URL: http://localhost:8003
+      VITE_USE_POLLING: "1"             # file events don't cross Windows bind mounts; poll instead
     volumes:
       - ./client/src:/app/src           # live reload while developing
     ports: ["127.0.0.1:5176:5176"]

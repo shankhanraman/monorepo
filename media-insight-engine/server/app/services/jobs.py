@@ -7,6 +7,9 @@ from app.config import settings
 log = logging.getLogger("jobs")
 # ponytail: per-process pools; run a single server replica. A real queue is the upgrade path.
 _ingest = ThreadPoolExecutor(settings.ingest_workers, thread_name_prefix="ingest")
+# Speech-to-text takes 10-20 min per episode and uses every core: one at a time, in its own pool,
+# so podcasts never hold up web pages, PDFs or videos with captions.
+_audio = ThreadPoolExecutor(1, thread_name_prefix="audio")
 _bank = ThreadPoolExecutor(settings.bank_workers, thread_name_prefix="bank")
 
 
@@ -17,9 +20,9 @@ def _safe(fn, *args):
         log.exception("background job %s%s crashed", fn.__name__, args)
 
 
-def submit_ingest(source_id: int) -> None:
+def submit_ingest(source_id: int, source_type: str | None = None) -> None:
     from app.services.ingest import ingest_source
-    _ingest.submit(_safe, ingest_source, source_id)
+    (_audio if source_type == "audio" else _ingest).submit(_safe, ingest_source, source_id)
 
 
 def submit_bank_item(answer_id: int) -> None:
@@ -31,9 +34,9 @@ def recover() -> None:
     """At startup: re-queue sources a restart interrupted, and close bank runs that can't finish."""
     from app.db import pool
     with pool().connection() as conn:
-        ids = [r["id"] for r in conn.execute(
-            """UPDATE sources SET status = 'queued', updated_at = now()
-               WHERE status IN ('queued', 'transcribing', 'analyzing') AND NOT archived RETURNING id""")]
+        rows = conn.execute(
+            """UPDATE sources SET status = 'queued', progress = NULL, updated_at = now()
+               WHERE status IN ('queued', 'transcribing', 'analyzing') AND NOT archived RETURNING id, type""").fetchall()
         conn.execute(
             """UPDATE answers SET status = 'failed', error = 'Server restarted during the run'
                WHERE status = 'pending' AND run_id IS NOT NULL""")
@@ -41,7 +44,7 @@ def recover() -> None:
             """UPDATE bank_runs SET status = 'failed', finished_at = now(),
                  done = (SELECT count(*) FROM answers a WHERE a.run_id = bank_runs.id)
                WHERE status = 'running'""")
-    for source_id in ids:
-        submit_ingest(source_id)
-    if ids:
-        log.info("re-queued %d interrupted sources", len(ids))
+    for r in rows:
+        submit_ingest(r["id"], r["type"])
+    if rows:
+        log.info("re-queued %d interrupted sources", len(rows))

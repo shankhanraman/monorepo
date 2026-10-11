@@ -62,7 +62,7 @@ def retrieve(collection: str, query: str, filters: dict | None = None, k: int = 
             return []
         rows = conn.execute(
             """SELECT seg.id AS segment_id, seg.start_s, seg.end_s, seg.anchor, seg.text, seg.summary, seg.tags,
-                      s.id AS source_id, s.collection_id, s.type, s.url, s.ext_id, s.host, s.published_at,
+                      s.id AS source_id, s.collection_id, s.type, s.url, s.ext_id, s.media_url, s.host, s.published_at,
                       coalesce(s.title, s.label, s.url) AS source_title
                FROM segments seg JOIN sources s ON s.id = seg.source_id WHERE seg.id = ANY(%s)""",
             (top,)).fetchall()

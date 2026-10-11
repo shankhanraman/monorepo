@@ -91,6 +91,8 @@ export const runQuestionBank = (bankId: number, filters?: AskFilters) =>
 export const getBankRun = (runId: number) => request<BankRun>('GET', `/bank-runs/${runId}`);
 /** Plain link target for the Markdown download (not fetched by the app). */
 export const bankRunReportUrl = (runId: number) => `${API_URL}/bank-runs/${runId}/report.md`;
+/** Plain link target for the PDF download (409 while the run is still running). */
+export const bankRunPdfUrl = (runId: number) => `${API_URL}/bank-runs/${runId}/report.pdf`;
 
 // Notes
 export const listNotes = (collection?: string) =>

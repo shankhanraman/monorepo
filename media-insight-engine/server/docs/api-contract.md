@@ -1,6 +1,21 @@
-# API contract: Media Insight Engine (Day 1)
+# API contract: Media Insight Engine (Day 1 + Day 2)
 
-The machine-readable contract is [openapi.yaml](openapi.yaml), OpenAPI 3.1, contract version **0.1.0**. This page explains the same contract for the frontend: what to call from each screen, what comes back, and the few rules the UI must follow.
+The machine-readable contract is [openapi.yaml](openapi.yaml), OpenAPI 3.1, contract version **0.2.0**. This page explains the same contract for the frontend: what to call from each screen, what comes back, and the few rules the UI must follow.
+
+## What changed in Day 2 (0.1.0 → 0.2.0)
+
+All changes only add things, so Day-1 screens keep working. To use the new features:
+
+| Change | Where | UI work |
+|---|---|---|
+| New source types `audio` (podcast episodes) and `pdf` | `type` on sources and `source_type` on citations | type badges; source page: `<audio>` player for audio, page sections for PDFs |
+| `progress` (0–100) while transcribing | `SourceSummary` | show "transcribing 42 %" (an episode can take 10–20 min) |
+| `stale` flag on sources | `SourceSummary` | "may be outdated" badge in the list and on the source page |
+| `feed_url` (episode came from an RSS feed) | `SourceSummary`, `SyncEntry` | "from feed" note; group the sync log |
+| `media_url` (playable audio) | `SourceDetail` | `src` of the `<audio>` element |
+| Sync `action: "feed"` | sync log | a line saying how many episodes a feed entry selected |
+| `GET /bank-runs/{id}/report.pdf` | question-bank report | "Export PDF" next to "Export Markdown" |
+| Audio and PDF link formats | `deep_link`, `app_link`, `label` | none: render them like the existing ones (§3, Source page) |
 
 If this page and `openapi.yaml` ever disagree, **`openapi.yaml` wins**. Changes to either go through a PR that updates both.
 
@@ -15,7 +30,7 @@ If this page and `openapi.yaml` ever disagree, **`openapi.yaml` wins**. Changes 
 | Format | JSON in and out, UTF-8. One exception: the Markdown report download |
 | Collection ids | slugs from the config file name: `yale`, `mit`. `all` is accepted **only** by the ask endpoint |
 | Other ids | integers |
-| Times | seconds: `start_s`, `end_s`, `ts_s`. **Web sources:** these hold the *section order number*, not seconds. Use `label`/`anchor` for display |
+| Times | seconds: `start_s`, `end_s`, `ts_s` for `youtube` and `audio`. **`web` and `pdf`:** these hold the *section order number*, not seconds. Use `label`/`anchor` for display |
 | Dates | `published_at` is `YYYY-MM-DD` or `null` (unknown). Other timestamps are ISO date-times in UTC |
 | Errors | `{"detail": "message"}`. Request validation errors (422) use FastAPI's list form `{"detail": [{"loc": [...], "msg": "...", "type": "..."}]}` |
 
@@ -39,10 +54,10 @@ The JSON samples below are the same examples, so you can also paste them into fi
 |---|---|
 | Header: college picker | `GET /collections` |
 | Sources list + Sync button + sync log | `GET /collections/{id}/sources` (poll), `POST /sync?collection={id}`, `GET /collections/{id}/sync-log` |
-| Source page (player, overview, chapters, timeline, quotes) | `GET /sources/{id}` |
+| Source page (YouTube or audio player, overview, chapters, timeline, quotes; sections for web/PDF) | `GET /sources/{id}` |
 | Ask chat | `POST /collections/{id or all}/ask`, `POST /notes` |
 | Notes | `GET /notes`, `DELETE /notes/{id}` |
-| Question Bank + report | `GET`/`POST /collections/{id}/question-banks`, `DELETE /question-banks/{id}`, `POST /question-banks/{id}/run`, `GET /bank-runs/{id}` (poll), `GET /bank-runs/{id}/report.md` |
+| Question Bank + report | `GET`/`POST /collections/{id}/question-banks`, `DELETE /question-banks/{id}`, `POST /question-banks/{id}/run`, `GET /bank-runs/{id}` (poll), `GET /bank-runs/{id}/report.md`, `GET /bank-runs/{id}/report.pdf` |
 
 ---
 
@@ -87,13 +102,16 @@ curl -X POST "http://localhost:8003/sync?collection=yale"
   "id": 21,
   "collection_id": "yale",
   "created_at": "2026-10-11T14:05:40Z",
-  "summary": { "queued": 1, "skipped": 2, "failed": 1, "archived": 1 },
+  "summary": { "queued": 2, "skipped": 3, "failed": 1, "archived": 1 },
   "entries": [
-    { "url": "https://www.youtube.com/watch?v=abc123XYZ00", "label": "Admissions podcast – supplemental essays", "action": "skipped", "reason": "Already ready", "source_id": 12 },
-    { "url": "https://admissions.yale.edu/essays", "label": "Essay prompts page", "action": "queued", "reason": "New URL", "source_id": 13 },
-    { "url": "https://www.youtube.com/watch?v=def456UVW11", "label": "Testing policy Q&A", "action": "skipped", "reason": "Already being ingested (transcribing)", "source_id": 15 },
-    { "url": "https://example.com/episode.mp3", "label": "Podcast episode on testing", "action": "failed", "reason": "Type 'audio' is not supported until Day 2", "source_id": null },
-    { "url": "https://www.youtube.com/watch?v=old000000AA", "label": "Old webinar", "action": "archived", "reason": "Removed from yale.yaml", "source_id": 9 }
+    { "url": "https://www.youtube.com/watch?v=abc123XYZ00", "label": "Admissions podcast – supplemental essays", "action": "skipped", "reason": "Already ready", "source_id": 12, "feed_url": null },
+    { "url": "https://admissions.yale.edu/essays", "label": "Essay prompts page", "action": "queued", "reason": "New URL", "source_id": 13, "feed_url": null },
+    { "url": "https://www.youtube.com/watch?v=def456UVW11", "label": "Testing policy Q&A", "action": "skipped", "reason": "Already being ingested (transcribing)", "source_id": 15, "feed_url": null },
+    { "url": "https://open.spotify.com/episode/4abc", "label": "Spotify episode", "action": "failed", "reason": "Spotify audio is DRM-protected: use the show's RSS feed instead", "source_id": null, "feed_url": null },
+    { "url": "https://feeds.megaphone.fm/insideyaleadmissions", "label": "Inside the Yale Admissions Office", "action": "feed", "reason": "Feed read: 3 of 57 episodes selected (latest 3)", "source_id": null, "feed_url": null },
+    { "url": "https://traffic.megaphone.fm/YALE1234567890.mp3", "label": "Episode 42: Testing policy", "action": "queued", "reason": "New episode", "source_id": 21, "feed_url": "https://feeds.megaphone.fm/insideyaleadmissions" },
+    { "url": "https://traffic.megaphone.fm/YALE1234567889.mp3", "label": "Episode 41: Supplemental essays", "action": "skipped", "reason": "Already ready", "source_id": 20, "feed_url": "https://feeds.megaphone.fm/insideyaleadmissions" },
+    { "url": "https://www.youtube.com/watch?v=old000000AA", "label": "Old webinar", "action": "archived", "reason": "Removed from yale.yaml", "source_id": 9, "feed_url": null }
   ]
 }
 ```
@@ -103,6 +121,7 @@ curl -X POST "http://localhost:8003/sync?collection=yale"
 | `skipped` | ✓ already there (`reason` says why) |
 | `failed` | ✗ red, with `reason`. Nothing was ingested |
 | `archived` | 🗄 removed from the file; hidden from answers |
+| `feed` | 📻 an RSS feed was read; `reason` says how many episodes were selected. Its episodes follow as normal lines with `feed_url` set; indent them under the feed line. Not counted in `summary` |
 
 | Status | Meaning |
 |---|---|
@@ -126,7 +145,18 @@ curl http://localhost:8003/collections/yale/sources
     "title": "Inside the Yale Admissions Office: Supplemental Essays", "host": "Yale Admissions",
     "published_at": "2025-09-15", "duration_s": 2112,
     "status": "ready", "error": null, "archived": false,
-    "ingested_at": "2026-10-11T14:07:02Z", "segment_count": 36
+    "ingested_at": "2026-10-11T14:07:02Z", "segment_count": 36,
+    "progress": null, "stale": false, "feed_url": null
+  },
+  {
+    "id": 21, "collection_id": "yale", "type": "audio",
+    "url": "https://traffic.megaphone.fm/YALE1234567890.mp3",
+    "label": "Episode 42: Testing policy", "priority": "normal",
+    "title": "Episode 42: Testing policy", "host": "Inside the Yale Admissions Office",
+    "published_at": "2026-09-01", "duration_s": 2160,
+    "status": "transcribing", "error": null, "archived": false,
+    "ingested_at": null, "segment_count": 0,
+    "progress": 42, "stale": false, "feed_url": "https://feeds.megaphone.fm/insideyaleadmissions"
   },
   {
     "id": 14, "collection_id": "yale", "type": "youtube",
@@ -134,13 +164,17 @@ curl http://localhost:8003/collections/yale/sources
     "label": "Info session recording", "priority": "normal",
     "title": "Yale Virtual Information Session", "host": "Yale Admissions",
     "published_at": "2024-11-02", "duration_s": 3605,
-    "status": "failed", "error": "No captions available (audio transcription is Day 2)",
-    "archived": false, "ingested_at": null, "segment_count": 0
+    "status": "failed", "error": "Video unavailable (private, removed or region-blocked)",
+    "archived": false, "ingested_at": null, "segment_count": 0,
+    "progress": null, "stale": true, "feed_url": null
   }
 ]
 ```
 - Status order: `queued → transcribing → analyzing → ready` or `failed` (with `error`).
 - `title` is `null` until metadata is fetched. Fall back to `label`, then `url`.
+- **`progress`** (Day 2) is set while an audio source, or a YouTube video without captions, is `transcribing`: show "transcribing 42 %" or a small progress bar. Transcribing a long episode takes 10–20 minutes, so keep polling.
+- **`stale`** (Day 2): show a "may be outdated" badge. It's true when the source is older than 18 months (the lens setting) or has no date.
+- **`feed_url`** (Day 2): the episode came from an RSS feed; you can show "from feed".
 
 ### Source page
 `GET /sources/{id}`
@@ -156,6 +190,7 @@ curl http://localhost:8003/sources/12
   "published_at": "2025-09-15", "duration_s": 2112,
   "status": "ready", "error": null, "archived": false,
   "ingested_at": "2026-10-11T14:07:02Z", "segment_count": 36,
+  "progress": null, "stale": false, "feed_url": null, "media_url": null,
   "overview": "Two Yale admissions officers explain how the supplemental essays are read. ...",
   "chapters": [
     { "id": 102, "start_s": 570, "end_s": 1065, "title": "Supplemental essays", "summary": "Each short answer should add something new. ..." }
@@ -177,8 +212,11 @@ curl http://localhost:8003/sources/12
 UI rules for this page:
 - **YouTube:** embed the player with `ext_id`. Clicking any timestamp (chapter, segment, quote) seeks the player to that second (PRD AC-3: within ±5 s).
 - **On load, read `?t=<seconds>`** and seek there. Citations link here as `/sources/12?t=720`.
+- **Audio sources** (Day 2): render a native `<audio controls src={media_url}>`. Timestamp clicks and `?t=` set `audio.currentTime = seconds` and call `play()`. Everything else (chapters, minute timeline, quotes) is the same as YouTube. The mock answers `GET /sources/21` with the audio example (Prism: header `Prefer: example=audio`).
 - **Web sources:** no player. Render each segment as a section with `id="seg-<segment id>"` and `anchor` as the heading. Citations link here as `/sources/13#seg-6010`; scroll to that element.
-- Show the raw `text` next to each `summary` (collapsible), so users can catch caption errors.
+- **PDF sources** (Day 2): same as web; `anchor` is "Page 3". Each section's "Open" link is its `deep_link` (`…pdf#page=3`, which browsers' PDF viewers open at that page).
+- Show the raw `text` next to each `summary` (collapsible), so users can catch caption and speech-to-text errors.
+- Show the `stale` badge next to the date.
 - Label key quotes **"verbatim"**.
 - `chapters`, `segments` and `key_quotes` are empty arrays until `status` is `ready`.
 
@@ -354,7 +392,7 @@ Poll the run every 2 s with `GET /bank-runs/{id}` until `status` is `done` or `f
 
 Export:
 - **Markdown:** `GET /bank-runs/{id}/report.md` returns a file download (`text/markdown`, `Content-Disposition: attachment`). Link to it directly. It returns `409` while the run is still running.
-- **PDF (Day 1):** a "Print / PDF" button calling `window.print()`, with print CSS on the report view. A server-side PDF arrives on Day 2.
+- **PDF** (Day 2): `GET /bank-runs/{id}/report.pdf` returns a file download (`application/pdf`), with the same content as the Markdown and clickable links. Link to it directly ("Export PDF"). It returns `409` while the run is still running and takes a few seconds to generate. Keep the "Print" button too.
 
 ---
 
@@ -373,17 +411,27 @@ Start polling right after `POST /sync` or `POST /question-banks/{id}/run`, and w
 
 | Name | Values |
 |---|---|
-| Source `type` | `youtube`, `web` (Day 2 adds `audio`, `pdf`) |
+| Source `type` | `youtube`, `web`, `audio`, `pdf` |
 | Source `status` | `queued`, `transcribing`, `analyzing`, `ready`, `failed` |
-| Sync `action` | `queued`, `skipped`, `failed`, `archived` |
+| Sync `action` | `queued`, `skipped`, `failed`, `archived`, `feed` |
 | `priority` | `high`, `normal`, `low` |
 | `coverage` | `strong`, `partial`, `none` |
 | Bank run `status` | `running`, `done`, `failed` |
 | Report item `status` | `pending`, `done`, `failed` |
 
 ## 6. Formatting helpers
-- **Time labels:** citations already include `label` ("12:00–13:00"). For segment and chapter times on the source page, format seconds as `m:ss`, or `h:mm:ss` when an hour or longer.
+- **Time labels:** citations already include `label`: "12:00–13:00" for video and audio, the heading for web, "Page 3" for PDF. For segment and chapter times on the source page, format seconds as `m:ss`, or `h:mm:ss` when an hour or longer.
 - **Dates:** show `published_at` as-is; `null` means "date unknown".
+- **Link formats** (`deep_link`):
+
+  | Type | Format |
+  |---|---|
+  | youtube | `https://youtu.be/<id>?t=<s>` |
+  | audio | `<audio file>#t=<s>` (the browser starts playback there) |
+  | web | `<url>#:~:text=<first words>` |
+  | pdf | `<pdf>#page=<n>` |
+
+  `app_link` is `/sources/<id>?t=<s>` for youtube and audio (plays in the app) and `/sources/<id>#seg-<id>` for web and pdf.
 - **Sources that disappear:** archived sources never appear in answers. Their old citations in saved notes still work, because the links point at stored data.
 
 ## 7. Mapping to the PRD's suggested contract

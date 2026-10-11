@@ -15,6 +15,10 @@ class IngestError(Exception):
     """A readable reason the source can't be ingested; shown to the user as sources.error."""
 
 
+class NoCaptions(IngestError):
+    """No English captions: the caller falls back to speech-to-text (Day 2)."""
+
+
 def captions(video_id: str) -> list[dict]:
     try:
         tl = YouTubeTranscriptApi().list(video_id)
@@ -25,7 +29,7 @@ def captions(video_id: str) -> list[dict]:
         return [{"start": s.start, "dur": s.duration, "text": html.unescape(s.text).replace("\n", " ")}
                 for s in transcript.fetch()]
     except (NoTranscriptFound, TranscriptsDisabled):
-        raise IngestError("No English captions available (audio transcription is Day 2)")
+        raise NoCaptions("No English captions available")
     except VideoUnavailable:
         raise IngestError("Video unavailable (private, removed or region-blocked)")
     except (RequestBlocked, IpBlocked):

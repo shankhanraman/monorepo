@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { getSource } from '../../api';
 import { errorMessage, publishedLabel, sourceTitle } from '../../lib/format';
+import { openLinkText, pdfLinkText, pdfPage, progressPercent } from '../../lib/sourceLabels';
+import { StaleBadge } from '../../lib/StaleBadge';
 import { formatTime } from '../../lib/time';
 import { usePolling } from '../../lib/usePolling';
-import type { KeyQuote, SourceDetail } from '../../types';
+import type { KeyQuote, Segment, SourceDetail, SourceType } from '../../types';
 import { StatusBadge } from '../sources/StatusBadge';
+import { useAudioPlayer } from './useAudioPlayer';
 import { useYouTubePlayer } from './useYouTubePlayer';
 import './source-page.css';
 
@@ -50,8 +53,10 @@ export function SourcePage({ onCollectionSeen }: { onCollectionSeen: (collection
     );
   }
 
-  const meta = [source.host, publishedLabel(source.published_at)];
-  if (source.duration_s != null) meta.push(formatTime(source.duration_s));
+  const rest: string[] = [];
+  if (source.duration_s != null) rest.push(formatTime(source.duration_s));
+  if (source.feed_url) rest.push('from feed');
+  const transcribePct = source.status === 'transcribing' ? progressPercent(source.progress) : null;
 
   return (
     <article className="source-page">
@@ -60,9 +65,17 @@ export function SourcePage({ onCollectionSeen }: { onCollectionSeen: (collection
       </p>
       <h2>{sourceTitle(source)}</h2>
       <p className="meta">
-        {meta.filter(Boolean).join(' · ')} ·{' '}
+        {source.host && `${source.host} · `}
+        {publishedLabel(source.published_at)}
+        {source.stale && (
+          <>
+            {' '}
+            <StaleBadge />
+          </>
+        )}
+        {rest.map((m) => ` · ${m}`).join('')} ·{' '}
         <a href={source.url} target="_blank" rel="noopener noreferrer">
-          Original {source.type === 'youtube' ? 'video' : 'page'}
+          Original {ORIGINAL_TEXT[source.type] ?? 'page'}
         </a>
       </p>
       {error && (
@@ -73,19 +86,35 @@ export function SourcePage({ onCollectionSeen }: { onCollectionSeen: (collection
       {source.status !== 'ready' && (
         <div className="card" role="status">
           <p className="row">
-            Status: <StatusBadge status={source.status} />
+            Status: <StatusBadge status={source.status} progress={source.progress} />
           </p>
           {source.status === 'failed' ? (
             <p className="error">{source.error ?? 'Ingest failed.'}</p>
           ) : (
-            <p className="muted">This source is still being processed. The page updates every 3 seconds.</p>
+            <>
+              {transcribePct !== null && (
+                <p className="transcribe-progress">
+                  <progress value={transcribePct} max={100} aria-label="Transcription progress" />
+                  <span>Transcribing… {transcribePct} %</span>
+                </p>
+              )}
+              <p className="muted">This source is still being processed. The page updates every 3 seconds.</p>
+            </>
           )}
         </div>
       )}
-      {source.type === 'youtube' ? <YouTubeSource source={source} /> : <WebSource source={source} />}
+      {source.type === 'youtube' ? (
+        <YouTubeSource source={source} />
+      ) : source.type === 'audio' ? (
+        <AudioSource source={source} />
+      ) : (
+        <DocumentSource source={source} />
+      )}
     </article>
   );
 }
+
+const ORIGINAL_TEXT: Record<SourceType, string> = { youtube: 'video', audio: 'episode', web: 'page', pdf: 'PDF' };
 
 function Overview({ text }: { text: string | null }) {
   if (!text) return null;
@@ -122,12 +151,27 @@ function QuoteBody({ quote }: { quote: KeyQuote }) {
   );
 }
 
-/* ---------- YouTube ---------- */
+function ExternalLink({ href, className, children }: { href: string; className?: string; children: ReactNode }) {
+  return (
+    <a href={href} className={className} target="_blank" rel="noopener noreferrer">
+      {children}
+      <span className="visually-hidden"> (new tab)</span>
+    </a>
+  );
+}
+
+/* ---------- Time-based: YouTube and audio ---------- */
 
 function parseT(value: string | null): number | null {
   if (value === null || value === '') return null;
   const n = Number(value);
   return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** `?t=<seconds>` of the current URL, or null. */
+function useTParam(): number | null {
+  const [params] = useSearchParams();
+  return parseT(params.get('t'));
 }
 
 function TimeButton({ s, label, onPlay }: { s: number; label?: string; onPlay: (seconds: number) => void }) {
@@ -139,10 +183,75 @@ function TimeButton({ s, label, onPlay }: { s: number; label?: string; onPlay: (
 }
 
 function YouTubeSource({ source }: { source: SourceDetail }) {
-  const [params] = useSearchParams();
-  const t = parseT(params.get('t'));
+  const t = useTParam();
+  // The initial ?t= is passed as the player's start time.
   const { containerRef, seek, error } = useYouTubePlayer(source.ext_id, t ?? 0);
+  return (
+    <TimeBasedView
+      source={source}
+      t={t}
+      seek={seek}
+      player={
+        source.ext_id ? (
+          <>
+            <div className="player" ref={containerRef} />
+            {error && <p className="error">{error}</p>}
+          </>
+        ) : null
+      }
+      noPlayerText="No video id yet, so the player is not available."
+    />
+  );
+}
+
+function AudioSource({ source }: { source: SourceDetail }) {
+  const t = useTParam();
+  // The initial ?t= sets the position and starts playback (if the browser allows it).
+  const { audioRef, seek, error, onError, onCanPlay } = useAudioPlayer(t);
+  return (
+    <TimeBasedView
+      source={source}
+      t={t}
+      seek={seek}
+      player={
+        source.media_url ? (
+          <>
+            <audio
+              ref={audioRef}
+              className="audio-player"
+              controls
+              preload="metadata"
+              src={source.media_url}
+              onError={onError}
+              onCanPlay={onCanPlay}
+              aria-label={`Audio: ${sourceTitle(source)}`}
+            >
+              <a href={source.media_url}>Download the audio</a>
+            </audio>
+            {error && <p className="error">{error}</p>}
+          </>
+        ) : null
+      }
+      noPlayerText="No playable audio yet, so the player is not available."
+    />
+  );
+}
+
+interface TimeBasedViewProps {
+  source: SourceDetail;
+  /** Current `?t=`. The player handles the first value; a later change seeks (another "Play here" link). */
+  t: number | null;
+  /** Moves the player to `seconds` and plays. */
+  seek: (seconds: number) => void;
+  /** The player element, or null when it is not available yet. */
+  player: ReactNode;
+  noPlayerText: string;
+}
+
+/** Player, overview, chapters, key quotes and minute timeline. Shared by YouTube and audio sources. */
+function TimeBasedView({ source, t, seek, player, noPlayerText }: TimeBasedViewProps) {
   const playerBoxRef = useRef<HTMLDivElement>(null);
+  const openText = openLinkText(source.type);
 
   const play = useCallback(
     (seconds: number) => {
@@ -152,7 +261,6 @@ function YouTubeSource({ source }: { source: SourceDetail }) {
     [seek],
   );
 
-  // Initial ?t= is passed as the player's start time; later changes (another "Play here" link) seek.
   const lastT = useRef(t);
   useEffect(() => {
     if (t !== null && t !== lastT.current) play(t);
@@ -161,13 +269,12 @@ function YouTubeSource({ source }: { source: SourceDetail }) {
 
   return (
     <>
-      {source.ext_id ? (
+      {player ? (
         <div className="player-box" ref={playerBoxRef}>
-          <div className="player" ref={containerRef} />
-          {error && <p className="error">{error}</p>}
+          {player}
         </div>
       ) : (
-        <p className="muted">No video id yet, so the player is not available.</p>
+        <p className="muted">{noPlayerText}</p>
       )}
 
       <Overview text={source.overview} />
@@ -197,9 +304,7 @@ function YouTubeSource({ source }: { source: SourceDetail }) {
               <li key={q.id} className="card quote">
                 <div className="row">
                   <TimeButton s={q.ts_s} onPlay={play} />
-                  <a href={q.deep_link} target="_blank" rel="noopener noreferrer">
-                    Open on YouTube
-                  </a>
+                  <ExternalLink href={q.deep_link}>{openText}</ExternalLink>
                 </div>
                 <QuoteBody quote={q} />
               </li>
@@ -222,6 +327,9 @@ function YouTubeSource({ source }: { source: SourceDetail }) {
                     <summary>Transcript</summary>
                     <p className="raw-text">{s.text}</p>
                   </details>
+                  <ExternalLink href={s.deep_link} className="segment-link">
+                    {openText}
+                  </ExternalLink>
                 </div>
               </li>
             ))}
@@ -232,12 +340,19 @@ function YouTubeSource({ source }: { source: SourceDetail }) {
   );
 }
 
-/* ---------- Web ---------- */
+/* ---------- Section-based: web and PDF ---------- */
 
-function WebSource({ source }: { source: SourceDetail }) {
+function DocumentSource({ source }: { source: SourceDetail }) {
   const { hash } = useLocation();
   const target = hash ? decodeURIComponent(hash.slice(1)) : '';
   const segmentCount = source.segments.length;
+  const isPdf = source.type === 'pdf';
+  const linkText = (deepLink: string) => (isPdf ? pdfLinkText(deepLink) : 'Open on page');
+  const heading = (s: Segment) => {
+    if (s.anchor) return s.anchor; // "Page 3" for PDFs
+    const page = isPdf ? pdfPage(s.deep_link) : null;
+    return page !== null ? `Page ${page}` : `Section ${s.ord + 1}`;
+  };
 
   useEffect(() => {
     if (!target || segmentCount === 0) return;
@@ -272,9 +387,7 @@ function WebSource({ source }: { source: SourceDetail }) {
               <li key={q.id} className="card quote">
                 <div className="row">
                   <Link to={{ hash: `#seg-${q.segment_id}` }}>Go to section</Link>
-                  <a href={q.deep_link} target="_blank" rel="noopener noreferrer">
-                    Open on page
-                  </a>
+                  <ExternalLink href={q.deep_link}>{linkText(q.deep_link)}</ExternalLink>
                 </div>
                 <QuoteBody quote={q} />
               </li>
@@ -285,7 +398,7 @@ function WebSource({ source }: { source: SourceDetail }) {
 
       {segmentCount > 0 && (
         <section aria-labelledby="sections-title">
-          <h3 id="sections-title">Sections</h3>
+          <h3 id="sections-title">{isPdf ? 'Pages' : 'Sections'}</h3>
           {source.segments.map((s) => (
             <section
               key={s.id}
@@ -294,16 +407,14 @@ function WebSource({ source }: { source: SourceDetail }) {
               className={`card web-section${target === `seg-${s.id}` ? ' is-target' : ''}`}
               aria-labelledby={`seg-${s.id}-title`}
             >
-              <h4 id={`seg-${s.id}-title`}>{s.anchor || `Section ${s.ord + 1}`}</h4>
+              <h4 id={`seg-${s.id}-title`}>{heading(s)}</h4>
               <p>{s.summary}</p>
               <Tags tags={s.tags} />
               <details>
                 <summary>Page text</summary>
                 <p className="raw-text">{s.text}</p>
               </details>
-              <a href={s.deep_link} target="_blank" rel="noopener noreferrer">
-                Open on page
-              </a>
+              <ExternalLink href={s.deep_link}>{linkText(s.deep_link)}</ExternalLink>
             </section>
           ))}
         </section>

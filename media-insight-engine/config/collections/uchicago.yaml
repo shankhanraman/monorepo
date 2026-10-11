@@ -1,0 +1,19 @@
+# One file per college (PRD FR-1). Edit, then: make sync COLLECTION=uchicago
+#   (Windows: docker compose exec server python -m app.sync uchicago)
+# URLs verified on 2026-10-11 (HTTP 200; PDFs checked for a real %PDF header).
+name: UChicago
+lens: undergrad-admissions
+focus_note: Early Action, class of 2031
+sources:
+  # AJ: add admissions YouTube videos / podcast feeds here, e.g.
+  # - url: https://www.youtube.com/watch?v=VIDEO_ID
+
+  - url: https://collegeadmissions.uchicago.edu/apply/essay/
+    label: "UChicago essay questions"
+    priority: high
+  - url: https://collegeadmissions.uchicago.edu/apply/application/required-materials/
+    label: "UChicago required materials (testing policy)"
+  - url: https://collegeadmissions.uchicago.edu/apply/uchicago-admissions-faq/
+    label: "UChicago admissions FAQ"
+  - url: https://data.uchicago.edu/files/2026/08/CDS_2025-2026_to_publish-1.pdf
+    label: "UChicago Common Data Set 2025-26"

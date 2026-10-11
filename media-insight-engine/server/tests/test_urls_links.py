@@ -31,7 +31,7 @@ def test_non_http_rejected():
 
 @pytest.mark.parametrize("url, kind", [
     (f"https://youtu.be/{V}", "youtube"), ("https://example.com/ep.mp3", "audio"),
-    ("https://example.com/podcast/feed", "audio"), ("https://example.com/x.pdf", "pdf"),
+    ("https://example.com/podcast/feed", "rss"), ("https://example.com/x.pdf", "pdf"),
     ("https://admissions.yale.edu/essays", "web"),
 ])
 def test_detect_type(url, kind):

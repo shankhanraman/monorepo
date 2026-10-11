@@ -4,6 +4,8 @@ from urllib.parse import parse_qs, parse_qsl, urlencode, urlsplit, urlunsplit
 
 _YT_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 _DROP_PARAMS = {"fbclid", "gclid"}
+AUDIO_EXT = (".mp3", ".m4a", ".wav", ".ogg", ".aac", ".opus")
+AUDIO_HOSTS = ("podcasts.apple.com",)          # podcast pages yt-dlp can download from
 
 
 def youtube_id(url: str) -> str | None:
@@ -36,10 +38,16 @@ def normalize(url: str) -> str:
 
 
 def detect_type(url: str) -> str:
+    """youtube | web | audio | pdf | rss | spotify (spotify is rejected: its audio is DRM-protected)."""
     if youtube_id(url):
         return "youtube"
-    path = urlsplit(url).path.lower()
-    if path.endswith((".mp3", ".m4a", ".wav", ".ogg", ".rss")) or path.endswith("/feed") or "/rss" in path:
+    u = urlsplit(url)
+    host, path = (u.hostname or "").lower(), u.path.lower()
+    if host.endswith("spotify.com"):
+        return "spotify"
+    if path.endswith((".rss", ".xml")) or re.search(r"/(feed|rss)(/|$)", path) or host.startswith(("feeds.", "rss.")):
+        return "rss"
+    if path.endswith(AUDIO_EXT) or host in AUDIO_HOSTS:
         return "audio"
     if path.endswith(".pdf"):
         return "pdf"

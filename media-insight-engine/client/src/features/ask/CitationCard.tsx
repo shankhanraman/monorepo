@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { publishedLabel } from '../../lib/format';
+import { appLinkText, openLinkText } from '../../lib/sourceLabels';
 import type { Citation } from '../../types';
 
 interface Props {
@@ -35,9 +36,10 @@ export function CitationCard({ citation: c, id, active, showCollection, secondar
       <p className="snippet">{c.snippet}</p>
       <p className="row citation-links">
         <a href={c.deep_link} target="_blank" rel="noopener noreferrer">
-          Open<span className="visually-hidden"> (new tab)</span>
+          {openLinkText(c.source_type)}
+          <span className="visually-hidden"> (new tab)</span>
         </a>
-        <Link to={c.app_link}>Play here</Link>
+        <Link to={c.app_link}>{appLinkText(c.source_type)}</Link>
       </p>
     </article>
   );

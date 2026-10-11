@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, getLatestSyncLog, listSources, syncCollection } from '../../api';
 import { errorMessage, publishedLabel, sourceTitle } from '../../lib/format';
+import { progressPercent } from '../../lib/sourceLabels';
+import { StaleBadge } from '../../lib/StaleBadge';
 import { formatTime } from '../../lib/time';
 import { usePolling } from '../../lib/usePolling';
 import type { SourceSummary, SyncLog } from '../../types';
-import { useCollection } from '../collections/CollectionLayout';
+import { useCollection, useReloadCollections } from '../collections/CollectionLayout';
 import { IN_PROGRESS, StatusBadge } from './StatusBadge';
 import { SyncLogView } from './SyncLogView';
 import './sources.css';
@@ -15,6 +17,7 @@ const SYNC_RETRY_MS = 10_000;
 
 export function SourcesPage() {
   const collection = useCollection();
+  const reloadCollections = useReloadCollections();
   const cid = collection.id;
   const [sources, setSources] = useState<SourceSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -43,11 +46,19 @@ export function SourcesPage() {
   const inProgress = sources?.some((s) => IN_PROGRESS.has(s.status)) ?? false;
   usePolling(refresh, 3000, inProgress);
 
+  // Ingest finished: refresh the college list so `source_counts` are current.
+  const wasInProgress = useRef(inProgress);
+  useEffect(() => {
+    if (wasInProgress.current && !inProgress) void reloadCollections();
+    wasInProgress.current = inProgress;
+  }, [inProgress, reloadCollections]);
+
   const sync = async () => {
     setSyncing(true);
     setSyncError(null);
     try {
       setSyncLog(await syncCollection(cid));
+      void reloadCollections(); // the sync may have changed lens_tags, focus_note and source_counts
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         setSyncError('A sync for this college is already running. Try again in a moment.');
@@ -102,20 +113,38 @@ export function SourcesPage() {
 }
 
 function SourceRow({ source: s }: { source: SourceSummary }) {
-  const meta = [s.host, publishedLabel(s.published_at), s.duration_s != null ? formatTime(s.duration_s) : null];
-  if (s.status === 'ready') meta.push(`${s.segment_count} segments`);
+  const rest: string[] = [];
+  if (s.duration_s != null) rest.push(formatTime(s.duration_s));
+  if (s.status === 'ready') rest.push(`${s.segment_count} segments`);
+  if (s.feed_url) rest.push('from feed');
+  const progress = s.status === 'transcribing' ? progressPercent(s.progress) : null;
   return (
     <li className="card source-row">
       <div className="row">
-        <StatusBadge status={s.status} />
-        <span className="badge">{s.type}</span>
+        <StatusBadge status={s.status} progress={s.progress} />
+        <span className={`badge type-badge type-${s.type}`}>{TYPE_LABELS[s.type] ?? s.type}</span>
         {s.priority === 'high' && <span className="badge">high priority</span>}
       </div>
+      {progress !== null && (
+        <progress className="slim-progress" value={progress} max={100} aria-label="Transcription progress" />
+      )}
       <h3 className="source-title">
         <Link to={`/sources/${s.id}`}>{sourceTitle(s)}</Link>
       </h3>
-      <p className="meta">{meta.filter(Boolean).join(' · ')}</p>
+      <p className="meta">
+        {s.host && `${s.host} · `}
+        {publishedLabel(s.published_at)}
+        {s.stale && (
+          <>
+            {' '}
+            <StaleBadge />
+          </>
+        )}
+        {rest.length > 0 && ` · ${rest.join(' · ')}`}
+      </p>
       {s.status === 'failed' && s.error && <p className="error">Error: {s.error}</p>}
     </li>
   );
 }
+
+const TYPE_LABELS: Record<SourceSummary['type'], string> = { youtube: 'youtube', web: 'web', audio: 'audio', pdf: 'PDF' };

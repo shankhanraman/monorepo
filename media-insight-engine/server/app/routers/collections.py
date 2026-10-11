@@ -8,8 +8,10 @@ from app.services.sync import SyncBusy, sync_collection
 router = APIRouter(tags=["collections"])
 
 SOURCE_COLUMNS = """s.id, s.collection_id, s.type, s.url, s.label, s.priority, s.title, s.host, s.published_at,
-    s.duration_s, s.status, s.error, s.archived, s.ingested_at,
-    (SELECT count(*) FROM segments seg WHERE seg.source_id = s.id) AS segment_count"""
+    s.duration_s, s.status, s.error, s.archived, s.ingested_at, s.progress, s.feed_url,
+    (SELECT count(*) FROM segments seg WHERE seg.source_id = s.id) AS segment_count,
+    (s.published_at IS NULL OR s.published_at <= current_date - (SELECT make_interval(months => c.stale_after_months)
+                                                                  FROM collections c WHERE c.id = s.collection_id)) AS stale"""
 
 
 def require_collection(collection_id: str) -> None:

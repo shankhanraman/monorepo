@@ -1,10 +1,10 @@
-// Hand-written types matching server/docs/openapi.yaml (contract 0.1.0).
+// Hand-written types matching server/docs/openapi.yaml (contract 0.2.0).
 
-export type SourceType = 'youtube' | 'web';
+export type SourceType = 'youtube' | 'web' | 'audio' | 'pdf';
 export type SourceStatus = 'queued' | 'transcribing' | 'analyzing' | 'ready' | 'failed';
 export type Coverage = 'strong' | 'partial' | 'none';
 export type Priority = 'high' | 'normal' | 'low';
-export type SyncAction = 'queued' | 'skipped' | 'failed' | 'archived';
+export type SyncAction = 'queued' | 'skipped' | 'failed' | 'archived' | 'feed';
 
 export interface SourceCounts {
   total: number;
@@ -30,7 +30,10 @@ export interface SyncEntry {
   label: string | null;
   action: SyncAction;
   reason: string;
+  /** Null when the entry failed validation, and for feed lines. */
   source_id: number | null;
+  /** The RSS feed an episode came from; null otherwise. */
+  feed_url: string | null;
 }
 
 export interface SyncLog {
@@ -57,6 +60,12 @@ export interface SourceSummary {
   archived: boolean;
   ingested_at: string | null;
   segment_count: number;
+  /** 0–100 while `transcribing` (audio, or YouTube without captions); null otherwise. */
+  progress: number | null;
+  /** Older than the collection's stale_after_months (default 18), or date unknown. */
+  stale: boolean;
+  /** The RSS feed this episode came from. */
+  feed_url: string | null;
 }
 
 export interface Chapter {
@@ -90,6 +99,8 @@ export interface KeyQuote {
 
 export interface SourceDetail extends SourceSummary {
   ext_id: string | null;
+  /** Playable audio URL for the in-app player (audio sources); null otherwise. */
+  media_url: string | null;
   overview: string | null;
   chapters: Chapter[];
   segments: Segment[];

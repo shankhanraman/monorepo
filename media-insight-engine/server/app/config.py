@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 
 class Settings:
@@ -45,9 +45,21 @@ class SourceEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
     url: str
     label: str | None = None
-    type: Literal["youtube", "web", "audio", "pdf"] | None = None
+    type: Literal["youtube", "web", "audio", "pdf", "rss"] | None = None
     priority: Literal["high", "normal", "low"] = "normal"
     notes: str | None = None
+    episodes: int = Field(10, ge=1, le=200)  # rss: newest N episodes (after `match`)
+    match: str | None = None                 # rss: regex on episode titles, case-insensitive
+
+    @field_validator("match")
+    @classmethod
+    def _valid_regex(cls, v: str | None) -> str | None:
+        if v is not None:
+            try:
+                re.compile(v)
+            except re.error as e:  # not a ValueError, so pydantic wouldn't turn it into a validation error
+                raise ValueError(f"invalid regex: {e}") from e
+        return v
 
 
 class CollectionFile(BaseModel):
