@@ -11,7 +11,7 @@ import urllib.request
 
 from app.config import settings
 
-ICON = {"queued": "⏳", "skipped": "✓", "failed": "✗", "archived": "🗄"}
+ICON = {"queued": "⏳", "skipped": "✓", "failed": "✗", "archived": "🗄", "feed": "📻"}
 BUSY = {"queued", "transcribing", "analyzing"}
 
 
@@ -31,7 +31,9 @@ def main(slug: str, wait: bool = True) -> int:
     log = call("POST", f"/sync?collection={slug}")
     print(f"Sync {slug}: " + ", ".join(f"{v} {k}" for k, v in log["summary"].items()))
     for e in log["entries"]:
-        print(f"  {ICON[e['action']]} {e['action']:<8} {e['label'] or e['url']}\n             {e['reason']}")
+        indent = "    " if e.get("feed_url") else "  "  # episodes sit under their feed line
+        print(f"{indent}{ICON.get(e['action'], '•')} {e['action']:<8} {e['label'] or e['url']}\n"
+              f"{indent}           {e['reason']}")
     queued = {e["source_id"] for e in log["entries"] if e["action"] == "queued"}
     if not wait or not queued:
         return 1 if log["summary"]["failed"] else 0
