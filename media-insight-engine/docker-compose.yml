@@ -1,0 +1,43 @@
+# One command: docker compose up --build   (copy .env.example to .env first)
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: mie
+      POSTGRES_USER: mie
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports: ["127.0.0.1:5437:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mie -d mie"]
+      interval: 3s
+      retries: 20
+
+  server:
+    build: ./server
+    env_file: .env                      # ANTHROPIC_API_KEY lives here, never in the repo
+    environment:
+      DATABASE_URL: postgresql://mie:${POSTGRES_PASSWORD}@db:5432/mie
+      CONFIG_DIR: /config
+      PROMPTS_DIR: /prompts
+      GOLDEN_DIR: /golden
+    volumes:
+      - ./config:/config:ro             # edit YAML, then sync; no rebuild
+      - ./prompts:/prompts:ro           # prompts are re-read on every call
+      - ./golden:/golden:ro
+    ports: ["127.0.0.1:8003:8003"]
+    shm_size: 1gb                       # headless Chromium (Crawl4AI) needs shared memory
+    depends_on:
+      db: { condition: service_healthy }
+
+  client:
+    build: ./client
+    environment:
+      VITE_API_URL: http://localhost:8003
+    volumes:
+      - ./client/src:/app/src           # live reload while developing
+    ports: ["127.0.0.1:5176:5176"]
+    depends_on: [server]
+
+volumes:
+  pgdata:

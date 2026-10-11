@@ -1,0 +1,132 @@
+.ask-head {
+  justify-content: space-between;
+}
+
+.filters {
+  margin-bottom: 1rem;
+}
+.filters > summary {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+.check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+.tag-list {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+}
+
+.turns {
+  margin: 1rem 0;
+}
+.turn {
+  margin-bottom: 1.25rem;
+  scroll-margin-top: 1rem;
+}
+.turn-question {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0 0 0.5rem auto;
+  padding: 0.5rem 0.8rem;
+  width: fit-content;
+  max-width: 90%;
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+  font-weight: 600;
+}
+
+.ask-form {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border);
+}
+.ask-form .field {
+  margin-bottom: 0.25rem;
+}
+.ask-form textarea {
+  margin-bottom: 0.5rem;
+}
+
+/* Answer + citations (also used by Notes and the Question Bank) */
+.answer-head {
+  margin-bottom: 0.5rem;
+}
+.answer-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+.not-covered {
+  font-weight: 600;
+}
+
+.citations,
+.closest {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0.75rem 0;
+}
+.closest h4 {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+}
+.citation-card {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.8rem;
+  background: var(--surface);
+  scroll-margin: 1rem;
+  transition: box-shadow 0.2s;
+}
+.citation-card.is-active {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  background: #f7faff;
+}
+.citation-card.is-secondary {
+  border-left-color: var(--border);
+  background: var(--bg);
+  font-size: 0.93rem;
+}
+.citation-title {
+  margin: 0;
+  font-size: 1rem;
+}
+.cite-n {
+  color: var(--accent-strong);
+}
+.stale {
+  color: var(--amber);
+  cursor: help;
+}
+.citation-college {
+  margin-left: 0.5rem;
+}
+.snippet {
+  margin: 0.35rem 0;
+  font-size: 0.93rem;
+  color: #333c48;
+}
+.citation-links {
+  gap: 1rem;
+  margin: 0;
+}
+
+.save-note {
+  margin-top: 0.75rem;
+}
+.save-note input {
+  flex: 1 1 12rem;
+}

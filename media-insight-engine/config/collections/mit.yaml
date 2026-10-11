@@ -1,0 +1,13 @@
+name: MIT
+lens: undergrad-admissions
+focus_note: Early Action, class of 2031
+sources:
+  # AJ: add MIT admissions YouTube videos here
+  # - url: https://www.youtube.com/watch?v=VIDEO_ID
+  #   label: MIT admissions info session
+
+  - url: https://mitadmissions.org/apply/firstyear/essays-activities-academics/
+    label: MIT essays, activities & academics
+    priority: high
+  - url: https://mitadmissions.org/blogs/entry/a-protocol-for-mit-admissions-essays/
+    label: MIT blog – a protocol for admissions essays

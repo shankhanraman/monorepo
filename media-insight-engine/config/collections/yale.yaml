@@ -1,0 +1,18 @@
+# One file per college (PRD FR-1). Edit, then: make sync COLLECTION=yale
+#   (Windows: docker compose exec server python -m app.sync yale)
+name: Yale
+lens: undergrad-admissions        # shared lens: config/lenses/undergrad-admissions.yaml
+focus_note: Early Action, class of 2031
+sources:
+  # --- YouTube videos (captions are used; audio-only podcasts are Day 2) ---
+  # AJ: add 3+ Yale admissions videos here, e.g. episodes of "Inside the Yale Admissions Office"
+  # - url: https://www.youtube.com/watch?v=VIDEO_ID
+  #   label: Admissions podcast – supplemental essays
+  #   priority: high
+
+  # --- Web pages ---
+  - url: https://admissions.yale.edu/essay-topics
+    label: Yale essay topics and short answer questions
+    priority: high
+  - url: https://admissions.yale.edu/podcast
+    label: Inside the Yale Admissions Office – podcast page

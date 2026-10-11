@@ -1,0 +1,86 @@
+.bank h3 {
+  margin-top: 0;
+}
+.bank-actions {
+  margin-top: 0.6rem;
+}
+.bank-actions .danger {
+  margin-left: auto;
+}
+
+.create-bank {
+  margin-top: 1.5rem;
+}
+.create-bank h3 {
+  margin-top: 0;
+}
+.create-bank input:not([type='file']),
+.create-bank textarea {
+  width: 100%;
+  margin-bottom: 0.75rem;
+}
+.create-bank .field {
+  margin-bottom: 0.25rem;
+}
+.file-row {
+  margin-bottom: 0.5rem;
+}
+.file-row input[type='file'] {
+  border: none;
+  padding: 0;
+  min-width: 0;
+}
+.preview {
+  margin: 0.5rem 0;
+}
+.preview ol {
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.progress-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+.progress-row progress {
+  flex: 1 1 12rem;
+  height: 0.9rem;
+}
+.report-actions {
+  margin-bottom: 1rem;
+}
+
+.report-item h3 {
+  margin-top: 0;
+}
+.report-item .banner {
+  margin: 0.5rem 0;
+}
+.report-item .answer-text {
+  margin-top: 0.5rem;
+}
+.watch-list li {
+  padding: 0.3rem 0.4rem;
+  border-radius: var(--radius);
+}
+.watch-list li.is-active {
+  background: var(--accent-soft);
+}
+.watch-list .cite-n {
+  font-weight: 600;
+  color: var(--accent-strong);
+}
+
+@media print {
+  .report-item {
+    break-inside: avoid-page;
+  }
+  .watch-list a::after {
+    content: ' (' attr(href) ')';
+    font-size: 0.8em;
+    color: #555;
+  }
+}

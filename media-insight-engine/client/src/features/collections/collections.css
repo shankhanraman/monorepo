@@ -1,0 +1,43 @@
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.25rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.app-name {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--text);
+  text-decoration: none;
+}
+.college-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.college-picker span {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.main-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.main-nav a {
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--radius);
+  color: var(--text);
+  text-decoration: none;
+}
+.main-nav a:hover {
+  background: var(--hover);
+}
+.main-nav a.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
