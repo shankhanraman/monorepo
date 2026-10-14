@@ -1,5 +1,6 @@
 """Background work inside the API process (PRD: one process, no queue). Status lives in the database."""
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from app.config import settings
@@ -11,6 +12,11 @@ _ingest = ThreadPoolExecutor(settings.ingest_workers, thread_name_prefix="ingest
 # so podcasts never hold up web pages, PDFs or videos with captions.
 _audio = ThreadPoolExecutor(1, thread_name_prefix="audio")
 _bank = ThreadPoolExecutor(settings.bank_workers, thread_name_prefix="bank")
+# Collection-wide synthesis: one at a time, deduplicated per collection (a run already in flight
+# wins; the stale flag + the next sync cover anything it missed).
+_synth = ThreadPoolExecutor(1, thread_name_prefix="synth")
+_synth_active: set[str] = set()
+_synth_guard = threading.Lock()
 
 
 def _safe(fn, *args):
@@ -30,6 +36,24 @@ def submit_bank_item(answer_id: int) -> None:
     _bank.submit(_safe, run_item, answer_id)
 
 
+def submit_synthesis(collection_id: str) -> None:
+    """Regenerate a collection's insights in the background. No-op if a run is already active for it."""
+    with _synth_guard:
+        if collection_id in _synth_active:
+            return
+        _synth_active.add(collection_id)
+
+    def job() -> None:
+        from app.services.insights import run
+        try:
+            run(collection_id)
+        finally:
+            with _synth_guard:
+                _synth_active.discard(collection_id)
+
+    _synth.submit(_safe, job)
+
+
 def recover() -> None:
     """At startup: re-queue sources a restart interrupted, and close bank runs that can't finish."""
     from app.db import pool
@@ -43,6 +67,9 @@ def recover() -> None:
         conn.execute(
             """UPDATE bank_runs SET status = 'failed', finished_at = now(),
                  done = (SELECT count(*) FROM answers a WHERE a.run_id = bank_runs.id)
+               WHERE status = 'running'""")
+        conn.execute(
+            """UPDATE collection_analyses SET status = 'failed', error = 'Server restarted during analysis'
                WHERE status = 'running'""")
     for r in rows:
         submit_ingest(r["id"], r["type"])

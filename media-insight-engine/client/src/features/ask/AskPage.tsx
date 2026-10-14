@@ -11,6 +11,12 @@ import './ask.css';
 
 const MAX_HISTORY = 10;
 
+const EXAMPLE_QUESTIONS = [
+  'What does this college look for in applicants?',
+  'Is standardized testing required this year?',
+  'How should I approach the supplemental essays?',
+];
+
 export function AskPage() {
   const collection = useCollection();
   const cid = collection.id;
@@ -170,6 +176,23 @@ export function AskPage() {
           Clear filters
         </button>
       </details>
+
+      {turns.length === 0 && (
+        <div className="ask-empty">
+          <p className="ask-empty-kicker">Grounded answers, every claim cited</p>
+          <h3 className="ask-empty-title">
+            Ask a question and get an answer drawn only from this collection&rsquo;s sources — with links to the
+            exact minute or paragraph.
+          </h3>
+          <div className="example-chips" aria-label="Example questions">
+            {EXAMPLE_QUESTIONS.map((q) => (
+              <button key={q} type="button" className="chip" onClick={() => setQuestion(q)}>
+                {q}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <ol className="list-reset turns" aria-live="polite">
         {turns.map((t, i) => (

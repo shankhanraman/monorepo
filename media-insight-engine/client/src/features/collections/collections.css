@@ -1,43 +1,132 @@
+/* ---- Masthead: a newspaper nameplate, not a SaaS top bar ---- */
 .app-header {
-  display: flex;
-  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 0.5rem 1.25rem;
-  padding: 0.75rem 1rem;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  gap: 0.5rem 1.5rem;
+  padding: 0.85rem 1.5rem;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: saturate(1.3) blur(10px);
+  -webkit-backdrop-filter: saturate(1.3) blur(10px);
+  border-bottom: 2.5px solid var(--border-ink);
 }
+
 .app-name {
-  font-weight: 700;
-  font-size: 1.1rem;
-  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.15rem;
+  letter-spacing: 0.01em;
+  color: var(--ink);
   text-decoration: none;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
+.app-name::before {
+  content: '';
+  width: 0.7rem;
+  height: 0.7rem;
+  background: var(--ink);
+  transform: rotate(45deg);
+  flex: none;
+}
+.app-name:hover {
+  color: var(--ink);
+}
+
 .college-picker {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.45rem;
+  justify-content: center;
 }
 .college-picker span {
-  font-size: 0.9rem;
-  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
 }
+.college-picker select {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  border: none;
+  border-bottom: 1.5px solid var(--border-ink);
+  border-radius: 0;
+  background: transparent;
+  padding: 0.2rem 1.4rem 0.2rem 0.3rem;
+}
+.college-picker select:focus {
+  box-shadow: none;
+  border-bottom-color: var(--accent);
+}
+
+/* ---- Nav: a ruled editorial index ---- */
 .main-nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: 0;
+  justify-self: end;
+  counter-reset: nav;
 }
 .main-nav a {
-  padding: 0.35rem 0.6rem;
-  border-radius: var(--radius);
-  color: var(--text);
+  position: relative;
+  counter-increment: nav;
+  padding: 0.3rem 0.95rem;
+  color: var(--muted);
   text-decoration: none;
+  font-weight: 650;
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-left: 1px solid var(--border);
+}
+.main-nav a:first-child {
+  border-left: none;
+}
+.main-nav a::before {
+  content: counter(nav, decimal-leading-zero) '  ';
+  font-family: var(--font-mono);
+  font-size: 0.68em;
+  color: var(--faint);
+  font-weight: 500;
 }
 .main-nav a:hover {
-  background: var(--hover);
+  color: var(--ink);
 }
 .main-nav a.active {
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-  font-weight: 600;
+  color: var(--ink);
+}
+.main-nav a.active::after {
+  content: '';
+  position: absolute;
+  left: 0.95rem;
+  right: 0.95rem;
+  bottom: -0.1rem;
+  height: 2px;
+  background: var(--ink);
+}
+.main-nav a.active::before {
+  color: var(--accent);
+}
+
+@media (max-width: 720px) {
+  .app-header {
+    grid-template-columns: 1fr auto;
+  }
+  .main-nav {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .college-picker {
+    justify-content: flex-end;
+  }
 }

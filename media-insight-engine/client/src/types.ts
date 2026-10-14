@@ -208,3 +208,48 @@ export interface Note extends NoteCreate {
   id: number;
   created_at: string;
 }
+
+// Collection-wide synthesis (home page)
+export type InsightKind = 'theme' | 'contradiction' | 'trend' | 'gap';
+
+export interface InsightCitation {
+  source_id: number;
+  source_title: string;
+  source_type: SourceType;
+  published_at: string | null;
+  app_link: string;
+}
+
+export interface Insight {
+  kind: InsightKind;
+  title: string;
+  detail: string;
+  tag: string | null;
+  sources: InsightCitation[];
+}
+
+export interface CoverageTopic {
+  tag: string;
+  sources: number;
+  gap: boolean;
+}
+
+export interface TimelineBucket {
+  period: string;
+  sources: number;
+}
+
+export interface CollectionAnalysis {
+  collection_id: string;
+  status: 'ready' | 'running' | 'failed' | 'empty';
+  model: string | null;
+  source_count: number;
+  segment_count: number;
+  consensus: number | null;
+  insights: Insight[];
+  coverage: CoverageTopic[];
+  timeline: TimelineBucket[];
+  stale: boolean;
+  error: string | null;
+  generated_at: string | null;
+}

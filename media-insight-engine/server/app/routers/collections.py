@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.config import ConfigError, collection_slugs, load_collection
 from app.db import pool
-from app.models.api import Collection, SourceSummary, SyncLog
+from app.models.api import Collection, CollectionAnalysis, SourceSummary, SyncLog
 from app.services.sync import SyncBusy, sync_collection
 
 router = APIRouter(tags=["collections"])
@@ -69,6 +69,40 @@ def latest_sync_log(collection_id: str):
     if not row:
         raise HTTPException(404, f"Collection '{collection_id}' has not been synced yet")
     return row
+
+
+EMPTY_ANALYSIS = {"status": "empty", "model": None, "source_count": 0, "segment_count": 0,
+                  "consensus": None, "insights": [], "coverage": [], "timeline": [],
+                  "error": None, "generated_at": None}
+
+
+@router.get("/collections/{collection_id}/insights", response_model=CollectionAnalysis, tags=["insights"])
+def get_insights(collection_id: str):
+    """Collection-wide synthesis for the home page. Regenerated automatically after each sync;
+    `status` is `empty` until the first run finishes. `stale` means sources changed since it ran."""
+    require_collection(collection_id)
+    with pool().connection() as conn:
+        row = conn.execute("SELECT * FROM collection_analyses WHERE collection_id = %s",
+                           (collection_id,)).fetchone()
+        if not row:
+            return {"collection_id": collection_id, "stale": False, **EMPTY_ANALYSIS}
+        col = conn.execute("SELECT last_synced_at FROM collections WHERE id = %s", (collection_id,)).fetchone()
+        newer = row["generated_at"] and conn.execute(
+            "SELECT 1 FROM sources WHERE collection_id = %s AND NOT archived AND updated_at > %s LIMIT 1",
+            (collection_id, row["generated_at"])).fetchone()
+    synced = col and col["last_synced_at"]
+    stale = bool(newer) or bool(synced and row["generated_at"] and col["last_synced_at"] > row["generated_at"])
+    return {**row, "stale": stale}
+
+
+@router.post("/collections/{collection_id}/insights/refresh", response_model=CollectionAnalysis, tags=["insights"])
+def refresh_insights(collection_id: str):
+    """Re-run the analytical agent on demand (for a failed or stale result). Returns at once; the
+    synthesis runs in the background — poll GET …/insights until `status` leaves `running`."""
+    require_collection(collection_id)
+    from app.services import jobs
+    jobs.submit_synthesis(collection_id)
+    return get_insights(collection_id)
 
 
 @router.get("/collections/{collection_id}/sources", response_model=list[SourceSummary], tags=["sources"])

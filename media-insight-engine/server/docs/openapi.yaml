@@ -27,6 +27,8 @@ tags:
     description: Colleges from config/collections/*.yaml and their sync (FR-1)
   - name: sources
     description: Ingested videos and web pages with analysis (FR-2, FR-3)
+  - name: insights
+    description: Collection-wide synthesis across all sources (home page)
   - name: ask
     description: Grounded Q&A with citations (FR-4)
   - name: question-banks
@@ -141,6 +143,48 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
               example: { detail: "Collection 'yale' has not been synced yet" }
+
+  /collections/{collection_id}/insights:
+    get:
+      tags: [insights]
+      operationId: getCollectionInsights
+      summary: Collection-wide synthesis for the home page
+      description: |
+        Insights the analytical agent produced by reading every ready source together: themes and
+        consensus advice, contradictions, trends over time, and coverage gaps, plus the Atlas
+        (per-tag coverage, a source timeline and a consensus score).
+        Regenerated automatically after each sync (once ingest finishes). `status` is `empty` until
+        the first run completes, `running` while a refresh is in flight (previous insights stay
+        visible), and `failed` if the last run errored. `stale` is true when sources changed since.
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: Latest analysis (poll every 3 s while `status` is `running`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CollectionAnalysis" }
+              examples: { Insights: { $ref: "#/components/examples/InsightsYale" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /collections/{collection_id}/insights/refresh:
+    post:
+      tags: [insights]
+      operationId: refreshCollectionInsights
+      summary: Re-run the analytical agent on demand
+      description: |
+        Triggers a background re-synthesis (for a failed or stale result) and returns the current
+        analysis at once. Poll `GET /collections/{collection_id}/insights` until `status` leaves `running`.
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: Current analysis; a refresh is now queued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CollectionAnalysis" }
+              examples: { Insights: { $ref: "#/components/examples/InsightsYale" } }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /collections/{collection_id}/sources:
     get:
@@ -851,6 +895,81 @@ components:
               type: array
               items: { $ref: "#/components/schemas/KeyQuote" }
 
+    InsightKind:
+      type: string
+      enum: [theme, contradiction, trend, gap]
+      description: |
+        theme         – a topic or advice several sources agree on.
+        contradiction – sources give conflicting guidance.
+        trend         – an emphasis that shifts with the publish date.
+        gap           – a Lens tag the sources barely cover (0–1 sources).
+
+    InsightCitation:
+      type: object
+      required: [source_id, source_title, source_type, published_at, app_link]
+      properties:
+        source_id: { type: integer }
+        source_title: { type: string }
+        source_type: { $ref: "#/components/schemas/SourceType" }
+        published_at: { type: [string, "null"], format: date }
+        app_link: { type: string, description: "In-app route to the source page: /sources/<id>" }
+
+    Insight:
+      type: object
+      required: [kind, title, detail, tag, sources]
+      properties:
+        kind: { $ref: "#/components/schemas/InsightKind" }
+        title: { type: string, description: Short, specific headline }
+        detail: { type: string, description: "1–3 sentences, grounded in the cited sources" }
+        tag: { type: [string, "null"], description: "Most relevant Lens tag (always set for a gap)" }
+        sources:
+          type: array
+          items: { $ref: "#/components/schemas/InsightCitation" }
+          description: Supporting sources (may be empty only for a gap)
+
+    CoverageTopic:
+      type: object
+      required: [tag, sources, gap]
+      properties:
+        tag: { type: string }
+        sources: { type: integer, description: Distinct ready sources carrying this tag }
+        gap: { type: boolean, description: True when 0–1 sources cover the tag }
+
+    TimelineBucket:
+      type: object
+      required: [period, sources]
+      properties:
+        period: { type: string, description: 'Publish year ("2025") or "Undated"' }
+        sources: { type: integer }
+
+    CollectionAnalysis:
+      type: object
+      required: [collection_id, status, model, source_count, segment_count, consensus, insights, coverage, timeline, stale, error, generated_at]
+      properties:
+        collection_id: { type: string }
+        status:
+          type: string
+          enum: [ready, running, failed, empty]
+          description: "empty = never run; running = refresh in flight (old insights still shown); failed = last run errored"
+        model: { type: [string, "null"] }
+        source_count: { type: integer, description: Ready sources the analysis covered }
+        segment_count: { type: integer }
+        consensus: { type: [integer, "null"], minimum: 0, maximum: 100, description: "themes / (themes + contradictions), as a percent" }
+        insights:
+          type: array
+          items: { $ref: "#/components/schemas/Insight" }
+        coverage:
+          type: array
+          items: { $ref: "#/components/schemas/CoverageTopic" }
+          description: One per Lens tag, most-covered first
+        timeline:
+          type: array
+          items: { $ref: "#/components/schemas/TimelineBucket" }
+          description: Ready sources by publish year
+        stale: { type: boolean, description: Sources changed (or a sync ran) after this was generated }
+        error: { type: [string, "null"] }
+        generated_at: { type: [string, "null"], format: date-time }
+
     AskFilters:
       type: object
       properties:
@@ -1010,6 +1129,49 @@ components:
             created_at: { type: string, format: date-time }
 
   examples:
+    InsightsYale:
+      summary: Collection insights with Atlas data
+      value:
+        collection_id: yale
+        status: ready
+        model: claude-opus-5-5
+        source_count: 18
+        segment_count: 240
+        consensus: 72
+        insights:
+          - kind: theme
+            title: Intellectual curiosity beats a list of achievements
+            detail: "Officers across podcasts and the essay guide say they would rather see genuine curiosity about one idea than a résumé of accolades."
+            tag: essays
+            sources:
+              - { source_id: 12, source_title: "Inside the Yale Admissions Office: Supplemental Essays", source_type: youtube, published_at: "2025-09-15", app_link: /sources/12 }
+              - { source_id: 13, source_title: "Essays | Yale College Undergraduate Admissions", source_type: web, published_at: null, app_link: /sources/13 }
+          - kind: contradiction
+            title: "Test-optional: skip the SAT, or submit anyway?"
+            detail: "The 2024 info session says a strong score only helps; the 2025 FAQ says scores are truly optional and never counted against an applicant."
+            tag: testing
+            sources:
+              - { source_id: 14, source_title: Yale Virtual Information Session, source_type: youtube, published_at: "2024-11-02", app_link: /sources/14 }
+              - { source_id: 22, source_title: Common Data Set 2025-2026, source_type: pdf, published_at: "2026-03-10", app_link: /sources/22 }
+          - kind: gap
+            title: Financial aid is barely covered
+            detail: "Financial aid is a Lens tag, yet only one source touches it, and only in passing."
+            tag: financial-aid
+            sources:
+              - { source_id: 13, source_title: "Essays | Yale College Undergraduate Admissions", source_type: web, published_at: null, app_link: /sources/13 }
+        coverage:
+          - { tag: essays, sources: 11, gap: false }
+          - { tag: testing, sources: 6, gap: false }
+          - { tag: interviews, sources: 4, gap: false }
+          - { tag: financial-aid, sources: 1, gap: true }
+        timeline:
+          - { period: "2024", sources: 7 }
+          - { period: "2025", sources: 9 }
+          - { period: Undated, sources: 2 }
+        stale: false
+        error: null
+        generated_at: "2026-10-14T12:30:00Z"
+
     SyncLogYale:
       value:
         id: 21

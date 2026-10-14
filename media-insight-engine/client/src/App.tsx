@@ -7,6 +7,7 @@ import { CollectionLayout } from './features/collections/CollectionLayout';
 import { CollectionPicker } from './features/collections/CollectionPicker';
 import { SourcesPage } from './features/sources/SourcesPage';
 import { SourcePage } from './features/source-page/SourcePage';
+import { InsightsPage } from './features/insights/InsightsPage';
 import { AskPage } from './features/ask/AskPage';
 import { NotesPage } from './features/notes/NotesPage';
 import { BanksPage } from './features/question-bank/BanksPage';
@@ -14,6 +15,7 @@ import { BankReportPage } from './features/question-bank/BankReportPage';
 import './features/collections/collections.css';
 
 const NAV = [
+  { to: 'insights', label: 'Insights' },
   { to: 'sources', label: 'Sources' },
   { to: 'ask', label: 'Ask' },
   { to: 'banks', label: 'Question Bank' },
@@ -77,7 +79,8 @@ export default function App() {
               <CollectionLayout collections={collections} onSelect={setLastCid} reloadCollections={reloadCollections} />
             }
           >
-            <Route index element={<Navigate to="sources" replace />} />
+            <Route index element={<Navigate to="insights" replace />} />
+            <Route path="insights" element={<InsightsPage />} />
             <Route path="sources" element={<SourcesPage />} />
             <Route path="ask" element={<AskPage />} />
             <Route path="banks" element={<BanksPage />} />
@@ -95,5 +98,5 @@ export default function App() {
 function Home({ collections }: { collections: Collection[] | null }) {
   if (!collections) return <p className="muted">Loading colleges…</p>;
   if (collections.length === 0) return <p>No colleges are configured yet. Add a file to config/collections/ on the server.</p>;
-  return <Navigate to={`/c/${encodeURIComponent(collections[0].id)}/sources`} replace />;
+  return <Navigate to={`/c/${encodeURIComponent(collections[0].id)}/insights`} replace />;
 }

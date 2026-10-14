@@ -31,6 +31,7 @@ def ingest_source(source_id: int) -> None:
             (source_id,)).fetchone()
     if not src or src["archived"] or src["status"] != "queued":
         return
+    collection_id = src["collection_id"]
     _status(source_id, "transcribing")
     try:
         kind, report = src["type"], (lambda pct: _progress(source_id, pct))
@@ -74,6 +75,21 @@ def ingest_source(source_id: int) -> None:
     except Exception as e:
         log.exception("ingest of source %s failed", source_id)
         _status(source_id, "failed", f"Unexpected error: {type(e).__name__}: {str(e)[:300]}")
+    finally:
+        # Whether this source became ready or failed, if it was the last one still ingesting for the
+        # collection, refresh the collection-wide insights (the home page). Runs on both paths.
+        _maybe_synthesize(collection_id)
+
+
+def _maybe_synthesize(collection_id: str) -> None:
+    from app.services import jobs
+    with pool().connection() as conn:
+        pending = conn.execute(
+            """SELECT 1 FROM sources WHERE collection_id = %s AND NOT archived
+               AND status IN ('queued', 'transcribing', 'analyzing') LIMIT 1""",
+            (collection_id,)).fetchone()
+    if not pending:
+        jobs.submit_synthesis(collection_id)
 
 
 def _save_segments(source_id: int, meta: dict, segs: list[segment.Seg]) -> None:

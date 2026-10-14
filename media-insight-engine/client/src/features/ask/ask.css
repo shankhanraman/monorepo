@@ -1,18 +1,30 @@
 .ask-head {
   justify-content: space-between;
+  align-items: flex-start;
+}
+.ask-head h2 {
+  margin: 0;
 }
 
 .filters {
   margin-bottom: 1rem;
 }
 .filters > summary {
-  font-size: 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
   margin-bottom: 0.5rem;
+  cursor: pointer;
+}
+.filters > summary:hover {
+  color: var(--ink);
 }
 .check-list {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.3rem;
   max-height: 14rem;
   overflow-y: auto;
 }
@@ -22,90 +34,187 @@
   gap: 0.25rem 1rem;
 }
 
+/* ---- Empty state: an editorial invitation ---- */
+.ask-empty {
+  margin: 2rem 0 2.5rem;
+  padding: 2rem 0;
+  border-top: 2px solid var(--border-ink);
+  border-bottom: 1px solid var(--border);
+}
+.ask-empty-kicker {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 0.75rem;
+}
+.ask-empty-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 3.2vw, 2.1rem);
+  font-weight: 540;
+  line-height: 1.18;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  max-width: 34ch;
+  margin: 0 0 1.5rem;
+}
+.example-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.chip {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.chip::before {
+  content: '“';
+  color: var(--faint);
+  margin-right: 0.1rem;
+}
+.chip:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--surface);
+  border-color: var(--ink);
+}
+.chip:hover::before {
+  color: var(--surface);
+}
+
 .turns {
-  margin: 1rem 0;
+  margin: 1.5rem 0;
 }
 .turn {
-  margin-bottom: 1.25rem;
+  margin-bottom: 2rem;
+  padding-top: 1.5rem;
+  border-top: 2px solid var(--border-ink);
   scroll-margin-top: 1rem;
 }
+.turn:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+/* The question reads as an editorial headline, not a chat bubble */
 .turn-question {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: center;
-  margin: 0 0 0.5rem auto;
-  padding: 0.5rem 0.8rem;
-  width: fit-content;
-  max-width: 90%;
-  background: var(--accent-soft);
-  border-radius: var(--radius);
-  font-weight: 600;
+  gap: 0.6rem;
+  align-items: baseline;
+  margin: 0 0 1rem;
+  padding-left: 1rem;
+  border-left: 3px solid var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 2.6vw, 1.85rem);
+  font-weight: 540;
+  line-height: 1.16;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+.turn-question .badge {
+  align-self: center;
 }
 
 .ask-form {
   position: sticky;
   bottom: 0;
-  background: var(--bg);
-  padding: 0.5rem 0;
-  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: 0.85rem 0;
+  border-top: 2px solid var(--border-ink);
 }
 .ask-form .field {
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.3rem;
 }
 .ask-form textarea {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.6rem;
 }
 
-/* Answer + citations (also used by Notes and the Question Bank) */
+/* ---- Answer + citations (also used by Notes and the Question Bank) ---- */
 .answer-head {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.65rem;
+  gap: 0.75rem;
 }
 .answer-label {
-  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--muted);
+  letter-spacing: 0.14em;
+  color: var(--accent);
 }
 .not-covered {
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 540;
+  color: var(--ink);
 }
 
 .citations,
 .closest {
   display: grid;
-  gap: 0.6rem;
-  margin: 0.75rem 0;
+  gap: 0;
+  margin: 1rem 0;
+  border-top: 1px solid var(--border);
 }
 .closest h4 {
-  margin: 0.25rem 0 0;
+  margin: 0.75rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--muted);
 }
+
+/* Citations are ruled index entries with a strong left marker */
 .citation-card {
-  border: 1px solid var(--border);
-  border-left: 4px solid var(--accent);
-  border-radius: var(--radius);
-  padding: 0.6rem 0.8rem;
-  background: var(--surface);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  padding: 0.85rem 0.9rem 0.85rem 1rem;
+  margin: 0;
+  background: transparent;
   scroll-margin: 1rem;
-  transition: box-shadow 0.2s;
+  transition:
+    background 0.2s ease,
+    border-left-color 0.2s ease;
+}
+.citation-card:hover {
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
 }
 .citation-card.is-active {
-  box-shadow: 0 0 0 3px var(--accent-soft);
-  background: #f7faff;
+  border-left-color: var(--ink);
+  background: var(--accent-tint);
 }
 .citation-card.is-secondary {
-  border-left-color: var(--border);
-  background: var(--bg);
   font-size: 0.93rem;
+  color: var(--muted);
 }
 .citation-title {
   margin: 0;
-  font-size: 1rem;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 540;
+  line-height: 1.18;
 }
 .cite-n {
-  color: var(--accent-strong);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--accent);
+  font-weight: 600;
 }
 .stale {
   color: var(--amber);
@@ -115,17 +224,27 @@
   margin-left: 0.5rem;
 }
 .snippet {
-  margin: 0.35rem 0;
-  font-size: 0.93rem;
-  color: #333c48;
+  margin: 0.45rem 0;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-style: italic;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--ink) 82%, var(--muted));
+  padding-left: 0.8rem;
+  border-left: 2px solid var(--border);
 }
 .citation-links {
-  gap: 1rem;
-  margin: 0;
+  gap: 1.25rem;
+  margin: 0.3rem 0 0;
+}
+.citation-links a {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
 }
 
 .save-note {
-  margin-top: 0.75rem;
+  margin-top: 1rem;
 }
 .save-note input {
   flex: 1 1 12rem;
