@@ -1,6 +1,6 @@
 # Data models
 
-> Status: **Day 1 built**; this document describes the implemented schema. Related docs: [architecture.md](architecture.md) · [dataflow.md](dataflow.md) · [api-contract.md](api-contract.md) / [openapi.yaml](openapi.yaml).
+> Status: **Day 1 + Day 2 built**; this document describes the implemented schema. Related docs: [architecture.md](architecture.md) · [dataflow.md](dataflow.md) · [api-contract.md](api-contract.md) / [openapi.yaml](openapi.yaml).
 
 The app stores data in three places. Each has one job:
 

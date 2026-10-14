@@ -1,6 +1,6 @@
 # Data flow
 
-> Status: **Day 1 built**. Related docs: [architecture.md](architecture.md) · [datamodels.md](datamodels.md) · [api-contract.md](api-contract.md).
+> Status: **Day 1 + Day 2 built**. Related docs: [architecture.md](architecture.md) · [datamodels.md](datamodels.md) · [api-contract.md](api-contract.md).
 
 The system has **two paths that share one store** (PRD §5):
 
@@ -77,7 +77,14 @@ How each URL is decided:
 
 Because of these rules, running sync twice in a row gives "skipped" for everything (AC-9). Nothing is deleted, and nothing is left out of the log (FR-1.4).
 
-The CLI variant does the same, then waits for its queued sources to finish and prints a line per source with the time it took. That's how AC-1 ("ready in under 5 minutes each") is measured.
+The CLI variant does the same, then waits for its queued sources to finish and prints a line per source with the time it took. That's how AC-1 ("ready in under 5 minutes each") is measured. A feed prints as one 📻 line with its episodes indented under it:
+
+```
+  📻 feed     Inside the Yale Admissions Office (podcast)
+             Feed read: 1 of 56 episodes selected (latest 1)
+    ⏳ queued   What Yale Looks For, Part 1: Academic Strength
+               New episode
+```
 
 ---
 
@@ -130,6 +137,18 @@ What a 35-minute YouTube video becomes (AC-2):
 | Chapters | 3–8 | `570–1065 s` "Supplemental essays" |
 | Key quotes | ≤ 10 | `731 s` "we really want to hear what got you curious…" (verbatim) |
 | Embeddings | ~35 | one per segment |
+
+A podcast episode goes through the same steps, but the transcript step dominates. Measured for a 36:42 episode (sync 17:07:38 → ready 18:22:28):
+
+| Time | Step |
+|---|---|
+| 0:00 | sync queues the episode; yt-dlp downloads the MP3 (44 MB) to a temp folder |
+| +0:20 | download done; Whisper model loads (~3 min, first podcast after a server start only) |
+| +4.5 min | MP3 decoded, voice-activity detection done; recognition starts (`progress` 0 %) |
+| +13 min | 5 % (the first 5 % is slowest) |
+| then | `progress` updates every 5 % |
+| ~+73 min | 100 %: segments saved, temp file deleted, status `analyzing` |
+| +75 min | analysis + embeddings done, status `ready` |
 
 Failures at any step set `status = failed` with a readable `error` and stop that source only. The next sync retries it. If the server restarts mid-job, startup sets the source back to `queued` and resubmits it.
 

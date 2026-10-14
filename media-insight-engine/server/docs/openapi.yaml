@@ -149,7 +149,7 @@ paths:
       summary: Sources of a collection with live status (FR-2.4)
       description: |
         Poll every 3 s while any source is `queued`, `transcribing` or `analyzing`.
-        Audio sources report `progress` (0–100) while transcribing; a long episode can take 10–20 minutes.
+        Audio sources report `progress` (0–100) while transcribing; on CPU this takes about 2x the episode length.
       parameters:
         - $ref: "#/components/parameters/CollectionId"
         - name: include_archived

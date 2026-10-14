@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **Day 1 built** (this document was approved before coding and updated during the build). Related docs: [datamodels.md](datamodels.md) · [dataflow.md](dataflow.md) · [api-contract.md](api-contract.md).
+> Status: **Day 1 + Day 2 built** (approved before coding; updated during the builds, including what was measured and fixed). Related docs: [datamodels.md](datamodels.md) · [dataflow.md](dataflow.md) · [api-contract.md](api-contract.md).
 
 ## 1. What the system does
 
@@ -131,7 +131,7 @@ Rules:
 | D10 | **Only listed URLs** are fetched; no link-following | PRD: AJ controls every source; keeps sync predictable | Deep crawl (possible later via a `crawl:` option) |
 | D11 | **Chat state lives in the client** (`history` sent with each question) | Stateless server, nothing to expire or clean up | LangGraph checkpointer / server sessions |
 | D12 | **Citations stored as snapshots** in answers and notes | Saved answers keep working after re-ingest or archive | Foreign keys only |
-| D13 | **Local speech-to-text (faster-whisper large-v3-turbo, CPU int8)**, one transcription at a time in its own worker pool | Private and free; best accuracy on names and numbers. Its own pool so long jobs never block web/PDF/video ingest | Cloud STT (fast, but sends audio out and needs a key); `small.en` (faster, less accurate; one env var away) |
+| D13 | **Local speech-to-text (faster-whisper large-v3-turbo, CPU int8)**, one transcription at a time in its own worker pool | Private and free; best accuracy on names and numbers. Cost: ~2× the episode length on this machine (§8). Its own pool so long jobs never block web/PDF/video ingest | Cloud STT (fast, but sends audio out and needs a key); `small.en` (faster, less accurate; one env var away) |
 | D14 | **An RSS entry expands into one source per episode** | Episodes are what gets cited and played; the feed is just a list | One source per feed |
 | D15 | **Report PDF printed by the image's Chromium** | Already installed for Crawl4AI: no new dependency, real links in the PDF | WeasyPrint / ReportLab |
 
@@ -157,7 +157,7 @@ Rules:
 | Analysis of a 35-min video (~35 segments) | ~60–120 s | **one** Opus call, structured output |
 | Embeddings | < 2 s | local, batched |
 | **Source ready** | **< 5 min (target ~2 min)** | 2 ingest workers, so several sources run side by side |
-| Podcast episode (35 min) | **~12–20 min**: does **not** meet the PRD target | download (~10 s) + faster-whisper large-v3-turbo on CPU + analysis. `WHISPER_MODEL=small.en` in `.env` brings it to ~5–6 min |
+| Podcast episode | **~2× the episode length**: does **not** meet the PRD target | measured on this machine (Docker Desktop on Windows, 8 CPU threads; Whisper uses 4–6 of them): a 36:42 episode took **1 h 15 min** from sync to ready, about **2× the episode's length**. Breakdown below. `WHISPER_MODEL=small.en` in `.env` is several times faster but less accurate (not measured yet) |
 | PDF (40 pages) | ~1–2 min | download + pypdf + one analysis call |
 | Retrieval | < 200 ms | HNSW + GIN indexes |
 | Answer | 3–6 s | Sonnet 5.5, low effort, top-10 segments |
@@ -165,14 +165,30 @@ Rules:
 | **Ask** | **< 10 s** | |
 | 10-question bank | ~20–40 s | 4 questions in parallel |
 
-Limits that are fine for Day 1 but known:
+Measured podcast timeline ("What Yale Looks For, Part 1", 36:42, 44 MB MP3):
+
+| Step | Time |
+|---|---|
+| Download (44 MB) | 20 s |
+| Load the 1.6 GB Whisper model | ~3 min (190 s), **only for the first podcast after a server start**; it then stays in memory (~2 GB RAM) |
+| Decode the MP3 + voice-activity detection | ~1 min |
+| Speech recognition | ~68 min (≈ 0.55× real time; the first 5 % is slowest) |
+| Analysis (Opus) + embeddings | ~2 min |
+| **Total, sync → ready** | **1 h 15 min** |
+
+The estimate before measuring was 12–20 min; CPU-only Whisper inside Docker on Windows turned out about 4× slower. Memory: with the model loaded the server uses ~2.3 GB of Docker's ~7.4 GB, so don't load a second copy alongside it (a test that did got the container OOM-killed).
+
+Known limits:
 - One analysis call handles about 200 segments (~3 h of video). Longer sources need the analysis split into chunks.
 - Crawl4AI starts a browser per page. Share one browser if many web sources appear.
 - The worker pool is per process, so don't run several server replicas.
+- Podcasts are transcribed one at a time: a backlog of N episodes takes about N × 2 × their length.
+- **Recreating the server container (`docker compose up --build`, or `up` after changing `.env` or the image) interrupts a running transcription.** On startup the episode is re-queued and starts again from 0 %. Rebuild when no podcast is transcribing.
+- `GET /collections` falls back to a college's last synced data when its YAML is currently broken, so a broken file can look fine in the UI until you press Sync (which then shows the 422 error).
 
 ## 9. Cross-cutting concerns
 
-- **Configuration:** settings come from the environment (`ANTHROPIC_API_KEY`, `DATABASE_URL`, `ANALYSIS_MODEL=claude-opus-5-5`, `ANSWER_MODEL=claude-sonnet-5-5`, `INGEST_WORKERS=2`, `BANK_WORKERS=4`). Collections, lenses and prompts come from mounted files.
+- **Configuration:** settings come from the environment (`ANTHROPIC_API_KEY`, `DATABASE_URL`, `ANALYSIS_MODEL=claude-opus-5-5`, `ANSWER_MODEL=claude-sonnet-5-5`, `INGEST_WORKERS=2`, `BANK_WORKERS=4`, `WHISPER_MODEL=large-v3-turbo`). Collections, lenses and prompts come from mounted files. `.env` is read when a container is **created**: after editing it run `docker compose up -d` (a `restart` keeps the old values).
 - **Errors:**
   - Ingest failures become `status=failed` with a readable `error`, and are never silent.
   - Model failures are retried by the SDK (429/5xx).
@@ -190,6 +206,17 @@ Limits that are fine for Day 1 but known:
   - A contract test compares FastAPI's generated `/openapi.json` with `docs/openapi.yaml`.
   - Acceptance checks AC-1…AC-10 run by hand on real Yale content.
   - The golden test set (`python -m app.golden yale`) must score ≥ 8/10 (AC-11).
+  - Day 2 adds:
+    - RSS parsing from a fixture feed, and sync with feeds (episodes, keep, archive, Spotify, bad regex);
+    - the progress reporter, and audio/PDF links;
+    - a **real PDF printed by the image's Chromium** read back page by page;
+    - `report.pdf` returning a real PDF;
+    - and a **real audio decode through faster-whisper**, which catches dependency breaks like the PyAV one below.
+  - Run inside the stack: `docker compose exec server pytest -q` (75 tests). Client: `npm test` (42) and `npm run build`.
+- **Dependency pins** (`server/requirements.txt`, all pinned to tested versions):
+  - `av==18.1.0`: PyAV 19 removed `av.open(metadata_errors=…)`, which faster-whisper 1.2.1 still passes, so every podcast failed with "open() got an unexpected keyword argument 'metadata_errors'". Unpin only when faster-whisper supports PyAV 19 (the decode test will tell).
+  - `yt-dlp` and `youtube-transcript-api`: bump them when YouTube changes break captions or downloads.
+- **Client development in Docker:** Windows bind mounts don't deliver file-change events into containers, so Vite polls (`VITE_USE_POLLING=1` in `docker-compose.yml`). Without it the dev server keeps serving stale code after edits.
 
 ## 10. How Day 2 and later plug in
 
@@ -203,11 +230,11 @@ Limits that are fine for Day 1 but known:
 | Read-only view for Aksh | basic auth plus a read-only role in the client |
 | Scheduled ingest of new episodes | a timer that runs the existing sync |
 
-## 11. Run it (when built)
+## 11. Run it
 
 ```bash
 cp .env.example .env          # add ANTHROPIC_API_KEY yourself
-docker compose up --build     # db + server + client
+docker compose up --build     # db + server + client (first build ~15 min: Chromium, embedding and Whisper models)
 make sync COLLECTION=yale     # Windows: docker compose exec server python -m app.sync yale
 # open http://localhost:5176
 ```
