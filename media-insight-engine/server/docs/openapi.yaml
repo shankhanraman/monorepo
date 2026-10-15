@@ -914,9 +914,21 @@ components:
         published_at: { type: [string, "null"], format: date }
         app_link: { type: string, description: "In-app route to the source page: /sources/<id>" }
 
+    InsightEvidence:
+      type: object
+      required: [source_id, source_title, source_type, quote, role, app_link, timestamp_s]
+      properties:
+        source_id: { type: integer }
+        source_title: { type: string }
+        source_type: { $ref: "#/components/schemas/SourceType" }
+        quote: { type: string, description: "Verified verbatim excerpt from a key quote" }
+        role: { type: string, enum: [supports, opposes, context] }
+        app_link: { type: string, description: "In-app deep link to the supporting source evidence" }
+        timestamp_s: { type: integer }
+
     Insight:
       type: object
-      required: [kind, title, detail, tag, sources]
+      required: [kind, title, detail, tag, sources, evidence, confidence, recommended_action]
       properties:
         kind: { $ref: "#/components/schemas/InsightKind" }
         title: { type: string, description: Short, specific headline }
@@ -926,6 +938,12 @@ components:
           type: array
           items: { $ref: "#/components/schemas/InsightCitation" }
           description: Supporting sources (may be empty only for a gap)
+        evidence:
+          type: array
+          items: { $ref: "#/components/schemas/InsightEvidence" }
+          description: Verified excerpts that support or oppose the finding
+        confidence: { type: string, enum: [high, medium, low] }
+        recommended_action: { type: [string, "null"], description: Concrete next step for the reader }
 
     CoverageTopic:
       type: object
@@ -954,7 +972,7 @@ components:
         model: { type: [string, "null"] }
         source_count: { type: integer, description: Ready sources the analysis covered }
         segment_count: { type: integer }
-        consensus: { type: [integer, "null"], minimum: 0, maximum: 100, description: "themes / (themes + contradictions), as a percent" }
+        consensus: { type: [integer, "null"], minimum: 0, maximum: 100, description: "Legacy theme-to-conflict ratio; do not interpret as evidence confidence" }
         insights:
           type: array
           items: { $ref: "#/components/schemas/Insight" }

@@ -215,12 +215,25 @@ class InsightCitation(BaseModel):
     app_link: str
 
 
+class InsightEvidence(BaseModel):
+    source_id: int
+    source_title: str
+    source_type: SourceType
+    quote: str
+    role: Literal["supports", "opposes", "context"]
+    app_link: str
+    timestamp_s: int
+
+
 class Insight(BaseModel):
     kind: InsightKind
     title: str
     detail: str
     tag: str | None
     sources: list[InsightCitation]
+    evidence: list[InsightEvidence] = []
+    confidence: Literal["high", "medium", "low"] = "medium"
+    recommended_action: str | None = None
 
 
 class CoverageTopic(BaseModel):

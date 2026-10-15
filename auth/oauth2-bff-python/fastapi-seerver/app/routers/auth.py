@@ -137,6 +137,7 @@ def callback(request: Request, code: str | None = None, state: str | None = None
             audience=settings["OIDC_CLIENT_ID"],
             issuer=settings["KEYCLOAK_ISSUER"],
             options={"require": ["exp", "iat", "sub"]},
+            leeway=10,  # tolerate small clock skew (e.g. the Keycloak container a fraction ahead of the host)
         )
     except (KeyError, jwt.PyJWTError) as e:
         raise HTTPException(400, f"Invalid ID token: {e}")

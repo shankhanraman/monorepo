@@ -4,6 +4,7 @@ The quantitative Atlas (coverage, timeline, consensus) is computed here in Pytho
 trustworthy; the model only writes the qualitative insight cards, which are then checked against
 the real sources. Runs in the background after a sync drains (see jobs.submit_synthesis)."""
 import logging
+import re
 from datetime import date
 from typing import Literal
 
@@ -23,12 +24,25 @@ MAX_CHAPTERS = 8   # per source, in the digest
 MAX_QUOTES = 4
 
 
+def _norm(text: str) -> str:
+    return " ".join(re.sub(r"[^\w\s]", " ", text.lower()).split())
+
+
+class EvidenceOut(BaseModel):
+    source_id: int
+    quote: str
+    role: Literal["supports", "opposes", "context"] = "supports"
+
+
 class InsightOut(BaseModel):
     kind: Literal["theme", "contradiction", "trend", "gap"]
     title: str
     detail: str
     tag: str | None = None
     source_ids: list[int] = []
+    evidence: list[EvidenceOut] = []
+    confidence: Literal["high", "medium", "low"] = "medium"
+    recommended_action: str | None = None
 
 
 class InsightsOut(BaseModel):
@@ -81,7 +95,10 @@ _PRIORITY = {"contradiction": 0, "gap": 1, "trend": 2, "theme": 3}
 
 def prioritize(insights: list[dict]) -> list[dict]:
     """Deterministic order so the highest-signal cards lead (ties: more supporting sources first)."""
-    return sorted(insights, key=lambda i: (_PRIORITY.get(i["kind"], 9), -len(i["sources"])))
+    confidence_rank = {"high": 0, "medium": 1, "low": 2}
+    return sorted(insights, key=lambda i: (_PRIORITY.get(i["kind"], 9),
+                                           confidence_rank.get(i.get("confidence", "medium"), 1),
+                                           -len(i["sources"])))
 
 
 def check(out: InsightsOut, source_map: dict[int, dict], lens_tags: list[str]) -> list[dict]:
@@ -101,12 +118,49 @@ def check(out: InsightsOut, source_map: dict[int, dict], lens_tags: list[str]) -
         title, detail = ins.title.strip(), ins.detail.strip()
         if not title or not detail:
             continue
+        # Evidence must be copied from the digest. This prevents a valid source id from
+        # becoming a citation for an unsupported claim.
+        evidence = []
+        seen_evidence = set()
+        for ev in ins.evidence:
+            if ev.source_id not in ids:
+                continue
+            quote = ev.quote.strip()
+            key = _norm(quote)
+            if not key or key in seen_evidence:
+                continue
+            records = source_map[ev.source_id].get("quote_records", [])
+            match = next((q for q in records if _norm(q["quote"]) == key), None)
+            if match is None:
+                continue
+            seen_evidence.add(key)
+            sid = ev.source_id
+            if source_map[sid]["type"] in ("youtube", "audio"):
+                app_link = f"/sources/{sid}?t={match['ts_s']}"
+            else:
+                app_link = f"/sources/{sid}#seg-{match['segment_id']}"
+            evidence.append({"source_id": sid, "source_title": source_map[sid]["title"],
+                             "source_type": source_map[sid]["type"], "quote": match["quote"],
+                             "role": ev.role, "app_link": app_link,
+                             "timestamp_s": match["ts_s"]})
+        if ins.kind != "gap" and not evidence:
+            continue
+        if ins.kind == "contradiction" and len({e["source_id"] for e in evidence}) < 2:
+            continue
+        confidence = ins.confidence
+        evidence_sources = {e["source_id"] for e in evidence}
+        if len(evidence_sources) >= 3 and confidence == "low":
+            confidence = "medium"
+        if len(evidence_sources) < 2 and confidence == "high":
+            confidence = "medium"
         sources = [{"source_id": i, "source_title": source_map[i]["title"],
                     "source_type": source_map[i]["type"],
                     "published_at": source_map[i]["published_at"].isoformat()
                     if source_map[i]["published_at"] else None,
                     "app_link": f"/sources/{i}"} for i in ids]
-        result.append({"kind": ins.kind, "title": title, "detail": detail, "tag": tag, "sources": sources})
+        result.append({"kind": ins.kind, "title": title, "detail": detail, "tag": tag, "sources": sources,
+                       "evidence": evidence, "confidence": confidence,
+                       "recommended_action": ins.recommended_action.strip() if ins.recommended_action else None})
     return result
 
 
@@ -118,7 +172,7 @@ def build_user_message(college: str, sources: list[dict], cov: list[dict]) -> st
     lines.append("<sources>")
     for s in sources:
         when = s["published_at"].isoformat() if s["published_at"] else "undated"
-        head = f"[{s['id']}] \"{s['title']}\" · {s['type']} · {when}"
+        head = f"[{s['id']}] \"{s['title']}\" · {s['type']} · priority={s.get('priority', 'normal')} · {when}"
         if s.get("host"):
             head += f" · {s['host']}"
         lines.append(head)
@@ -127,7 +181,7 @@ def build_user_message(college: str, sources: list[dict], cov: list[dict]) -> st
         if s.get("chapters"):
             lines.append("chapters: " + "; ".join(f"{t} — {sm}" for t, sm in s["chapters"][:MAX_CHAPTERS]))
         if s.get("quotes"):
-            lines.append("quotes: " + " | ".join(f'"{q}"' for q in s["quotes"][:MAX_QUOTES]))
+            lines.append("evidence_quotes: " + " | ".join(f'"{q}"' for q in s["quotes"][:MAX_QUOTES]))
         lines.append("")
     lines.append("</sources>")
     return "\n".join(lines)
@@ -138,7 +192,7 @@ def build_user_message(college: str, sources: list[dict], cov: list[dict]) -> st
 def _fetch_sources(collection_id: str) -> list[dict]:
     with pool().connection() as conn:
         srcs = conn.execute(
-            """SELECT s.id, coalesce(s.title, s.label, s.url) AS title, s.type, s.published_at, s.host, s.overview,
+            """SELECT s.id, coalesce(s.title, s.label, s.url) AS title, s.type, s.priority, s.published_at, s.host, s.overview,
                       (SELECT count(*) FROM segments g WHERE g.source_id = s.id) AS segment_count,
                       (SELECT coalesce(array_agg(DISTINCT t), '{}')
                          FROM segments g CROSS JOIN unnest(g.tags) AS t WHERE g.source_id = s.id) AS tags
@@ -152,7 +206,7 @@ def _fetch_sources(collection_id: str) -> list[dict]:
             "SELECT source_id, title, summary FROM chapters WHERE source_id = ANY(%s) ORDER BY source_id, ord",
             (ids,)).fetchall()
         quotes = conn.execute(
-            "SELECT source_id, quote FROM key_quotes WHERE source_id = ANY(%s) ORDER BY source_id, id",
+            "SELECT source_id, segment_id, ts_s, quote, is_advice FROM key_quotes WHERE source_id = ANY(%s) ORDER BY source_id, id",
             (ids,)).fetchall()
     ch_by: dict[int, list] = {}
     for c in chapters:
@@ -163,6 +217,7 @@ def _fetch_sources(collection_id: str) -> list[dict]:
     for s in srcs:
         s["chapters"] = ch_by.get(s["id"], [])
         s["quotes"] = q_by.get(s["id"], [])
+        s["quote_records"] = [q for q in quotes if q["source_id"] == s["id"]][:MAX_QUOTES]
         s["tags"] = list(s["tags"] or [])
     return srcs
 
