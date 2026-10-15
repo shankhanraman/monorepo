@@ -203,8 +203,14 @@ def _apply(col: Collection, feeds: dict) -> dict:
         log_row = conn.execute(
             "INSERT INTO sync_logs (collection_id, summary, entries) VALUES (%s, %s, %s) RETURNING id, created_at",
             (col.id, Jsonb(summary), Jsonb(entries))).fetchone()
+    queued_any = False
     for s in steps:  # after commit, so workers see the rows
         if s.action == "queued":
+            queued_any = True
             jobs.submit_ingest(s.source_id, s.type)
+    if not queued_any:
+        # Nothing to ingest, so no drain will fire: refresh the collection-wide insights now
+        # (e.g. a re-sync where every source is already ready, or only metadata changed).
+        jobs.submit_synthesis(col.id)
     return {"id": log_row["id"], "collection_id": col.id, "created_at": log_row["created_at"],
             "summary": summary, "entries": entries}

@@ -5,6 +5,7 @@ import os
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
+from psycopg.types.json import Jsonb
 
 from app.config import settings
 from tests.conftest import write
@@ -30,6 +31,7 @@ def cleanup():
             conn.execute("DELETE FROM answers WHERE collection_id = %s", (slug,))
             conn.execute("DELETE FROM question_banks WHERE collection_id = %s", (slug,))
             conn.execute("DELETE FROM sync_logs WHERE collection_id = %s", (slug,))
+            conn.execute("DELETE FROM collection_analyses WHERE collection_id = %s", (slug,))
             conn.execute("DELETE FROM sources WHERE collection_id = %s", (slug,))
             conn.execute("DELETE FROM collections WHERE id = %s", (slug,))
 
@@ -39,6 +41,8 @@ def api(config_dir, monkeypatch):
     monkeypatch.setattr(settings, "config_dir", config_dir)
     queued = []
     monkeypatch.setattr(jobs, "submit_ingest", lambda source_id, source_type=None: queued.append((source_id, source_type)))
+    synths = []
+    monkeypatch.setattr(jobs, "submit_synthesis", lambda collection_id: synths.append(collection_id))
     write(config_dir / "collections" / f"{A}.yaml", f"""\
         name: Test Yale
         lens: test-lens
@@ -54,6 +58,7 @@ def api(config_dir, monkeypatch):
     cleanup()
     client = TestClient(app)  # no context manager → no startup job recovery
     client.queued = queued
+    client.synths = synths
     yield client
     cleanup()
 
@@ -137,3 +142,36 @@ def test_source_detail_banks_and_notes(api):
     assert api.delete(f"/notes/{created.json()['id']}").status_code == 204
     assert api.delete(f"/question-banks/{bank.json()['id']}").status_code == 204
     assert api.get("/health").json() == {"status": "ok"}
+
+
+def test_insights_empty_then_persisted_roundtrip(api):
+    api.post(f"/sync?collection={A}")
+    empty = api.get(f"/collections/{A}/insights").json()                       # never analyzed yet
+    assert empty["status"] == "empty" and empty["insights"] == [] and empty["coverage"] == []
+    assert (empty["source_count"], empty["consensus"], empty["stale"]) == (0, None, False)
+    assert api.get("/collections/zz-nope/insights").status_code == 404
+
+    # Persist an analysis directly (no model call), with an old generated_at so the later sync marks it stale.
+    insights = [{"kind": "theme", "title": "Be specific", "detail": "Name the seminar.", "tag": "essays",
+                 "sources": [{"source_id": 1, "source_title": "Essays podcast", "source_type": "youtube",
+                              "published_at": "2025-09-15", "app_link": "/sources/1"}]}]
+    cov = [{"tag": "essays", "sources": 3, "gap": False}, {"tag": "testing", "sources": 0, "gap": True}]
+    tl = [{"period": "2025", "sources": 3}]
+    with pool().connection() as conn:
+        conn.execute(
+            """INSERT INTO collection_analyses (collection_id, status, model, source_count, segment_count,
+                 consensus, insights, coverage, timeline, generated_at)
+               VALUES (%s, 'ready', 'claude', 3, 30, 72, %s, %s, %s, '2020-01-01')""",
+            (A, Jsonb(insights), Jsonb(cov), Jsonb(tl)))
+    got = api.get(f"/collections/{A}/insights").json()
+    assert got["status"] == "ready" and got["consensus"] == 72 and got["source_count"] == 3
+    assert got["insights"][0]["sources"][0]["app_link"] == "/sources/1"
+    assert [c["gap"] for c in got["coverage"]] == [False, True]
+    assert got["stale"] is True   # the sync above set last_synced_at (now) > generated_at (2020)
+
+
+def test_resync_without_queue_triggers_synthesis(api):
+    api.post(f"/sync?collection={A}")           # 3 queued → ingest will drain and trigger; no direct trigger
+    assert api.synths == []
+    api.post(f"/sync?collection={A}")           # all skipped, nothing queued → trigger directly
+    assert api.synths == [A]

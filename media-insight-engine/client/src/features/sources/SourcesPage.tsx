@@ -102,7 +102,7 @@ export function SourcesPage() {
       {sources === null && !loadError && <p className="muted">Loading sources…</p>}
       {sources?.length === 0 && <p className="muted">No sources yet. Press Sync to read this college's config file.</p>}
       {sources && sources.length > 0 && (
-        <ul className="list-reset">
+        <ul className="list-reset source-list">
           {sources.map((s) => (
             <SourceRow key={s.id} source={s} />
           ))}

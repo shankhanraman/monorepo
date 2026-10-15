@@ -4,6 +4,7 @@ import type {
   AskFilters,
   BankRun,
   Collection,
+  CollectionAnalysis,
   Note,
   NoteCreate,
   QuestionBank,
@@ -67,6 +68,10 @@ export const syncCollection = (collectionId: string) =>
   request<SyncLog>('POST', `/sync?collection=${enc(collectionId)}`);
 export const getLatestSyncLog = (collectionId: string) =>
   request<SyncLog>('GET', `/collections/${enc(collectionId)}/sync-log`);
+export const getCollectionInsights = (collectionId: string) =>
+  request<CollectionAnalysis>('GET', `/collections/${enc(collectionId)}/insights`);
+export const refreshCollectionInsights = (collectionId: string) =>
+  request<CollectionAnalysis>('POST', `/collections/${enc(collectionId)}/insights/refresh`);
 
 // Sources
 export const listSources = (collectionId: string, includeArchived = false) =>

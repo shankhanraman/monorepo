@@ -99,6 +99,24 @@ CREATE TABLE IF NOT EXISTS sync_logs (
     entries       jsonb NOT NULL
 );
 
+-- Collection-wide synthesis (the "analytical agent" behind the home Insights page).
+-- One row per collection, replaced on every run; the qualitative insights and the quantitative
+-- Atlas (coverage, timeline) are stored as JSON so the read endpoint is a passthrough.
+CREATE TABLE IF NOT EXISTS collection_analyses (
+    collection_id text PRIMARY KEY REFERENCES collections(id) ON DELETE CASCADE,
+    status        text NOT NULL DEFAULT 'ready' CHECK (status IN ('ready', 'running', 'failed', 'empty')),
+    model         text,
+    source_count  int NOT NULL DEFAULT 0,
+    segment_count int NOT NULL DEFAULT 0,
+    consensus     int CHECK (consensus BETWEEN 0 AND 100),
+    insights      jsonb NOT NULL DEFAULT '[]',
+    coverage      jsonb NOT NULL DEFAULT '[]',
+    timeline      jsonb NOT NULL DEFAULT '[]',
+    error         text,
+    latency_ms    int,
+    generated_at  timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS question_banks (
     id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     collection_id text NOT NULL REFERENCES collections(id),

@@ -204,6 +204,51 @@ class BankRun(BaseModel):
     items: list[ReportItem]
 
 
+InsightKind = Literal["theme", "contradiction", "trend", "gap"]
+
+
+class InsightCitation(BaseModel):
+    source_id: int
+    source_title: str
+    source_type: SourceType
+    published_at: date | None
+    app_link: str
+
+
+class Insight(BaseModel):
+    kind: InsightKind
+    title: str
+    detail: str
+    tag: str | None
+    sources: list[InsightCitation]
+
+
+class CoverageTopic(BaseModel):
+    tag: str
+    sources: int
+    gap: bool
+
+
+class TimelineBucket(BaseModel):
+    period: str
+    sources: int
+
+
+class CollectionAnalysis(BaseModel):
+    collection_id: str
+    status: Literal["ready", "running", "failed", "empty"]
+    model: str | None
+    source_count: int
+    segment_count: int
+    consensus: int | None
+    insights: list[Insight]
+    coverage: list[CoverageTopic]
+    timeline: list[TimelineBucket]
+    stale: bool
+    error: str | None
+    generated_at: datetime | None
+
+
 class NoteCreate(BaseModel):
     collection_id: str
     question: str
