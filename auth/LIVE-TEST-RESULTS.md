@@ -86,6 +86,65 @@ Both halves either side of that handshake are verified; only the host-browser le
 | OIDC (auth-code + PKCE) | ✅ live e2e (JWT + BFF labs) |
 | OAuth 2.0 (confidential BFF) | ✅ live e2e (BFF lab) |
 | Kerberos | ◑ KDC ticket + SPNEGO keytab + Keycloak config live; JWT-consume suite-verified; host-browser SPNEGO leg env-blocked |
-| API key (inbound) | ✗ not implemented anywhere in the monorepo |
-| Client certificate / mTLS | ✗ not implemented |
-| SAML | ✗ not implemented |
+| API key (inbound) | ✅ built + live e2e — new lab `auth/api-key-python` (see below) |
+| Client certificate / mTLS | ✅ built + live e2e — new lab `auth/mtls-python` (see below) |
+| SAML | ✅ built + live e2e — new lab `auth/saml-python` (see below) |
+
+## SAML lab (saml-python) — BUILT + PASS
+New lab: Keycloak as the SAML 2.0 **IdP**, FastAPI as the **SP** (`python3-saml`, in Docker for xmlsec1). SP-
+initiated SSO; the SP verifies the signed assertion against the IdP cert, then issues a signed session cookie.
+curl/script-driven (no SPA). Ports: Keycloak 8083, SP 8006, Postgres 5440.
+
+Backend `pytest` (in the container): **3 passed**. `onelogin`/`xmlsec` imported lazily so host import works.
+
+Live (`auth/saml_login_test.py` — full SP-initiated SSO, no browser):
+| Step | Expected | Actual |
+|---|---|---|
+| Guest write (no session) | 401 | ✅ 401 |
+| Guest read | 200 | ✅ 200 |
+| SAML SSO as alice (AuthnRequest → Keycloak login → signed assertion → ACS verify) | session | ✅ `saml_session` set |
+| `GET /me` with session | the NameID | ✅ `{"sub":"alice"}` |
+| Write with session | 201 | ✅ 201, persisted |
+
+## All seven mechanisms — final
+JWT ✅ · OIDC ✅ · OAuth 2.0 ✅ · Kerberos ◑ (KDC+config live, SPNEGO browser leg env-blocked) · API key ✅ ·
+mTLS ✅ · SAML ✅. The four pre-existing labs were verified live earlier; the three new labs (api-key, mtls,
+saml) were built and verified live here.
+
+## mTLS lab (mtls-python) — BUILT + PASS
+New lab: self-signed CA → server + client certs. **nginx** terminates TLS, verifies the client cert against the
+CA, and forwards `X-SSL-Client-Verify` / `X-SSL-Client-DN` to FastAPI (unpublished). Writes need a verified cert;
+reads public. curl-driven (no SPA — mTLS is machine/transport auth). Ports: nginx 8443 (HTTPS), Postgres 5439.
+
+Backend `pytest`: **3 passed**.
+
+Live (curl through nginx; client cert via an OpenSSL curl container to sidestep Windows Schannel):
+| Step | Expected | Actual |
+|---|---|---|
+| `GET /users/` no client cert | 200 | ✅ 200 |
+| `POST /users/` no client cert | 401 | ✅ 401 |
+| `POST /users/` with client cert (CN=alice) | 201 | ✅ 201, persisted |
+| `GET /me` with client cert | the CN | ✅ `{"cn":"alice"}` |
+| `GET /me` without client cert | 401 | ✅ 401 |
+
+Trust boundary verified: `docker compose ps` shows the FastAPI `server` has **no published port**; a forged-header
+request straight to `:8000` can't connect (HTTP 000), so the `X-SSL-*` headers can't be spoofed.
+
+## API key lab (api-key-python) — BUILT + PASS
+New full lab (FastAPI + React + Postgres, no Keycloak). Writes need `X-API-Key`; the server stores only a
+SHA-256 of each key and accepts an active match. Two demo keys seeded by migration 0002.
+Ports: API 8004, web 5177, Postgres 5438.
+
+Backend `pytest`: **3 passed**. Frontend `npm test`: **5 passed**; `npm run build` (strict tsc): clean.
+
+Live (curl against the running stack):
+| Step | Expected | Actual |
+|---|---|---|
+| `GET /users/` no key | 200 | ✅ 200 |
+| `POST /users/` no key | 401 | ✅ 401 |
+| `POST /users/` unknown key | 401 | ✅ 401 |
+| `POST /users/` revoked (inactive) key | 401 | ✅ 401 |
+| `POST /users/` valid active key | 201 | ✅ 201, persisted |
+| `GET /me` valid key | name+prefix, no secret | ✅ `{"name":"demo","prefix":"mial_live"}` |
+
+Seeded keys verified hashed in Postgres (plaintext never stored).

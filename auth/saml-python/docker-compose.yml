@@ -1,0 +1,61 @@
+services:
+  # Postgres for the app (database "app"). Keycloak uses its own in-container H2 (dev mode), so Postgres
+  # only holds the app data here.
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+    networks: [lab]
+    ports:
+      - "5440:5432"  # 5434-5439: the other labs, 5437: media-insight-engine
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./postgres/create-databases.sql:/db/create-databases.sql:ro
+      - ./postgres/initdb.sh:/docker-entrypoint-initdb.d/10-create-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d app"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Keycloak as the SAML 2.0 Identity Provider. KC_HOSTNAME fixes the issuer + endpoint URLs to the
+  # browser-facing address, so the descriptor the SP fetches points the browser at :8083.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: http://localhost:8083
+    networks: [lab]
+    ports:
+      - "8083:8080"
+    volumes:
+      - ./keycloak/saml-lab-realm.json:/opt/keycloak/data/import/saml-lab-realm.json:ro
+
+  # FastAPI SAML SP. Published so the browser can reach /saml/login and /saml/acs. Fetches the IdP
+  # descriptor from Keycloak over the internal network (keycloak:8080), lazily on first use.
+  server:
+    build: ./fastapi-seerver
+    environment:
+      APP_NAME: fastapi-server
+      CORS_ORIGIN: http://localhost:8006
+      DATABASE_URL: postgresql+psycopg://app:app@db:5432/app
+      SP_BASE_URL: http://localhost:8006
+      SP_ENTITY_ID: http://localhost:8006/saml/metadata
+      IDP_METADATA_URL: http://keycloak:8080/realms/saml-lab/protocol/saml/descriptor
+      SESSION_SECRET: saml-lab-dev-secret-change-me
+    networks: [lab]
+    depends_on:
+      db: { condition: service_healthy }
+      keycloak: { condition: service_started }
+    ports:
+      - "8006:8000"
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+networks:
+  lab:
+
+volumes:
+  pg-data:

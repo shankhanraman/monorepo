@@ -1,0 +1,55 @@
+{
+  "realm": "saml-lab",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "email": "alice@example.com",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Example",
+      "credentials": [
+        { "type": "password", "value": "alice123", "temporary": false }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "http://localhost:8006/saml/metadata",
+      "name": "FastAPI SAML SP",
+      "protocol": "saml",
+      "enabled": true,
+      "fullScopeAllowed": true,
+      "frontchannelLogout": true,
+      "redirectUris": ["http://localhost:8006/saml/acs"],
+      "attributes": {
+        "saml.assertion.signature": "true",
+        "saml.server.signature": "true",
+        "saml.client.signature": "false",
+        "saml.authnstatement": "true",
+        "saml_force_name_id_format": "true",
+        "saml_name_id_format": "username",
+        "saml_assertion_consumer_url_post": "http://localhost:8006/saml/acs",
+        "saml_single_logout_service_url_post": "http://localhost:8006/saml/sls",
+        "saml.signature.algorithm": "RSA_SHA256"
+      },
+      "protocolMappers": [
+        {
+          "name": "email",
+          "protocol": "saml",
+          "protocolMapper": "saml-user-property-mapper",
+          "config": {
+            "user.attribute": "email",
+            "attribute.name": "email",
+            "attribute.nameformat": "Basic",
+            "friendly.name": "email"
+          }
+        }
+      ]
+    }
+  ]
+}

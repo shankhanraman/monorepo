@@ -1,0 +1,28 @@
+services:
+  # Postgres for the app (database "app"). No Keycloak in this lab: an API key is its own credential.
+  # Only started with COMPOSE_PROFILES=local-db (the default in .env). Without it, DATABASE_URL in
+  # fastapi-seerver/.env points at an installed Postgres or AWS RDS instead.
+  db:
+    image: postgres:17
+    profiles: [local-db]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+    networks: [lab]
+    ports:
+      - "5438:5432"  # 5434/5435/5436: the other auth labs, 5437: media-insight-engine
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./postgres/create-databases.sql:/db/create-databases.sql:ro
+      - ./postgres/initdb.sh:/docker-entrypoint-initdb.d/10-create-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d app"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+networks:
+  lab:
+
+volumes:
+  pg-data:
