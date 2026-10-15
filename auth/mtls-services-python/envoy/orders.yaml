@@ -1,0 +1,85 @@
+# Sidecar for orders-service. Shares the app's network namespace (like a pod), so 127.0.0.1:8000 is the app.
+#   :8443  inbound  - mTLS required; only certificates from the lab CA, not revoked; identity → XFCC header
+admin:
+  address: { socket_address: { address: 0.0.0.0, port_value: 9901 } }
+
+static_resources:
+  listeners:
+  - name: inbound
+    address: { socket_address: { address: 0.0.0.0, port_value: 8443 } }
+    filter_chains:
+    - transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+          require_client_certificate: true            # no certificate, no connection
+          common_tls_context:
+            tls_certificates:                         # our own identity: spiffe://lab.local/orders
+            - certificate_chain: { filename: /certs/orders.crt }
+              private_key: { filename: /certs/orders.key }
+            validation_context:
+              trusted_ca: { filename: /certs/ca.crt } # only the lab CA
+              crl: { filename: /certs/crl.pem }       # revoked certificates are refused
+              match_typed_subject_alt_names:          # and only identities from our trust domain
+              - san_type: URI
+                matcher: { prefix: "spiffe://lab.local/" }
+      filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: inbound
+          # Replace any client-supplied x-forwarded-client-cert with the VERIFIED certificate's details.
+          forward_client_cert_details: SANITIZE_SET
+          set_current_client_cert_details: { uri: true }
+          route_config:
+            virtual_hosts:
+            - name: app
+              domains: ["*"]
+              routes: [{ match: { prefix: "/" }, route: { cluster: local_app } }]
+          http_filters:
+          - name: envoy.filters.http.router
+            typed_config: { "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router }
+
+  - name: egress_to_users
+    address: { socket_address: { address: 127.0.0.1, port_value: 9001 } }   # only the app (same netns) can use it
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: egress_users
+          route_config:
+            virtual_hosts:
+            - name: users
+              domains: ["*"]
+              routes: [{ match: { prefix: "/" }, route: { cluster: users_mtls } }]
+          http_filters:
+          - name: envoy.filters.http.router
+            typed_config: { "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router }
+
+  clusters:
+  - name: local_app
+    type: STATIC
+    load_assignment:
+      cluster_name: local_app
+      endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: 127.0.0.1, port_value: 8000 } } } }] }]
+  - name: users_mtls
+    type: STRICT_DNS
+    load_assignment:
+      cluster_name: users_mtls
+      endpoints: [{ lb_endpoints: [{ endpoint: { address: { socket_address: { address: users-app, port_value: 8443 } } } }] }]
+    transport_socket:
+      name: envoy.transport_sockets.tls
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+        sni: users-app
+        common_tls_context:
+          tls_certificates:                           # we prove we are spiffe://lab.local/orders
+          - certificate_chain: { filename: /certs/orders.crt }
+            private_key: { filename: /certs/orders.key }
+          validation_context:
+            trusted_ca: { filename: /certs/ca.crt }
+            crl: { filename: /certs/crl.pem }
+            match_typed_subject_alt_names:            # and the server must be exactly users-service
+            - san_type: URI
+              matcher: { exact: "spiffe://lab.local/users" }
