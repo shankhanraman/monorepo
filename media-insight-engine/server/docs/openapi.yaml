@@ -49,10 +49,11 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [status]
+                required: [status, whisper]
                 properties:
                   status: { type: string, const: ok }
-              example: { status: ok }
+                  whisper: { type: string, enum: [mlx, cuda, cpu], description: Speech-to-text backend this server picked }
+              example: { status: ok, whisper: cpu }
 
   /collections:
     get:

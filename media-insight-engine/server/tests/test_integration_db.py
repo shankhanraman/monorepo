@@ -141,7 +141,7 @@ def test_source_detail_banks_and_notes(api):
     assert [n["id"] for n in api.get(f"/notes?collection={A}").json()] == [created.json()["id"]]
     assert api.delete(f"/notes/{created.json()['id']}").status_code == 204
     assert api.delete(f"/question-banks/{bank.json()['id']}").status_code == 204
-    assert api.get("/health").json() == {"status": "ok"}
+    assert api.get("/health").json()["status"] == "ok"
 
 
 def test_insights_empty_then_persisted_roundtrip(api):
