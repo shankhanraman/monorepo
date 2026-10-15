@@ -110,7 +110,7 @@ sequenceDiagram
         W->>W: bucket caption lines into 60 s segments (keep raw text + lines)
     else type = audio (Day 2), or YouTube without captions
         W->>W: yt-dlp downloads the audio to a temp folder
-        W->>W: faster-whisper → timed lines (progress % written every 5 %)
+        W->>W: Whisper (mlx / cuda / cpu, per machine) → timed lines (progress % every 5 %; mlx: none until done)
         W->>W: same 60 s bucketing as captions; temp file deleted
     else type = pdf (Day 2)
         W->>W: download (≤ 50 MB) → pypdf text per page → one segment per page

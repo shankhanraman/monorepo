@@ -72,10 +72,12 @@ flowchart TB
 | Container | Image / base | Port (host) | State |
 |---|---|---|---|
 | `db` | `pgvector/pgvector:pg17` | 5437 → 5432 | named volume `pgdata` |
-| `server` | `python:3.12-slim` + Chromium (Crawl4AI, also prints report PDFs) + fastembed model + faster-whisper `large-v3-turbo` baked in | 8003 | stateless (everything in `db`) |
+| `server` | `python:3.12-slim` + Chromium (Crawl4AI, also prints report PDFs) + fastembed model + faster-whisper `large-v3-turbo` baked in; `WHISPER_GPU=1` build arg (`docker-compose.gpu.yml`) adds the CUDA libraries | 8003 | stateless (everything in `db`) |
 | `client` | `node:22` (Vite dev server on Day 1) | 5176 | none |
 
 The ports avoid the PostgreSQL 17 already running on the host (5432) and the other labs in this monorepo.
+
+On an Apple Silicon Mac, `make dev-mac` runs `db` and `client` in Docker and the server natively on the host (same port 8003), because Docker on macOS can't reach the Apple GPU.
 
 ## 5. Inside the server
 
@@ -83,7 +85,7 @@ The ports avoid the PostgreSQL 17 already running on the host (5432) and the oth
 server/
 ├── schema.sql                 # applied idempotently at startup
 ├── app/
-│   ├── main.py                # FastAPI app, CORS, startup (schema, re-queue stuck jobs)
+│   ├── main.py                # FastAPI app, CORS, startup (schema, speech-to-text backend check, re-queue stuck jobs)
 │   ├── dependencies.py        # DB connection, settings, Anthropic client
 │   ├── config.py              # settings (env) + YAML loading and validation (collections, lenses)
 │   ├── db.py                  # psycopg 3 pool + pgvector registration
@@ -97,7 +99,7 @@ server/
 │       ├── youtube.py         # captions (youtube-transcript-api) + metadata (yt-dlp)
 │       ├── web.py             # Crawl4AI → clean Markdown → sections
 │       ├── feeds.py           # Day 2: podcast RSS → episodes (defusedxml)
-│       ├── audio.py           # Day 2: yt-dlp download → faster-whisper → timed lines, progress %
+│       ├── audio.py           # Day 2: yt-dlp download → Whisper (mlx | cuda | cpu, picked per machine) → timed lines, progress %
 │       ├── pdf.py             # Day 2: pypdf text per page
 │       ├── segment.py         # captions → N-second windows; Markdown → sections
 │       ├── analyze.py         # Opus call + output checks (chapters, tags, quotes)
@@ -131,7 +133,7 @@ Rules:
 | D10 | **Only listed URLs** are fetched; no link-following | PRD: AJ controls every source; keeps sync predictable | Deep crawl (possible later via a `crawl:` option) |
 | D11 | **Chat state lives in the client** (`history` sent with each question) | Stateless server, nothing to expire or clean up | LangGraph checkpointer / server sessions |
 | D12 | **Citations stored as snapshots** in answers and notes | Saved answers keep working after re-ingest or archive | Foreign keys only |
-| D13 | **Local speech-to-text (faster-whisper large-v3-turbo, CPU int8)**, one transcription at a time in its own worker pool | Private and free; best accuracy on names and numbers. Cost: ~2× the episode length on this machine (§8). Its own pool so long jobs never block web/PDF/video ingest | Cloud STT (fast, but sends audio out and needs a key); `small.en` (faster, less accurate; one env var away) |
+| D13 | **Local speech-to-text (Whisper large-v3-turbo)**, one transcription at a time in its own worker pool. Backend picked per machine (`WHISPER_DEVICE=auto`): mlx-whisper on the Apple GPU (native Mac run), faster-whisper on CUDA (NVIDIA), else faster-whisper CPU int8 | Private and free; best accuracy on names and numbers. Cost on CPU: ~2× the episode length on this machine (§8); GPU backends are much faster (not yet measured here). Its own pool so long jobs never block web/PDF/video ingest. A bad `WHISPER_DEVICE` stops startup; a failing GPU in auto mode falls back to CPU with a warning | Cloud STT (fast, but sends audio out and needs a key); `small.en` (faster, less accurate; one env var away) |
 | D14 | **An RSS entry expands into one source per episode** | Episodes are what gets cited and played; the feed is just a list | One source per feed |
 | D15 | **Report PDF printed by the image's Chromium** | Already installed for Crawl4AI: no new dependency, real links in the PDF | WeasyPrint / ReportLab |
 
@@ -157,7 +159,7 @@ Rules:
 | Analysis of a 35-min video (~35 segments) | ~60–120 s | **one** Opus call, structured output |
 | Embeddings | < 2 s | local, batched |
 | **Source ready** | **< 5 min (target ~2 min)** | 2 ingest workers, so several sources run side by side |
-| Podcast episode | **~2× the episode length**: does **not** meet the PRD target | measured on this machine (Docker Desktop on Windows, 8 CPU threads; Whisper uses 4–6 of them): a 36:42 episode took **1 h 15 min** from sync to ready, about **2× the episode's length**. Breakdown below. `WHISPER_MODEL=small.en` in `.env` is several times faster but less accurate (not measured yet) |
+| Podcast episode | **~2× the episode length**: does **not** meet the PRD target | measured on this machine (Docker Desktop on Windows, 8 CPU threads; Whisper uses 4–6 of them): a 36:42 episode took **1 h 15 min** from sync to ready, about **2× the episode's length**. Breakdown below. `WHISPER_MODEL=small.en` in `.env` is several times faster but less accurate (not measured yet). The bigger speed-up is a GPU: `make up-gpu` (NVIDIA) or `make dev-mac` (Apple Silicon), not measured yet |
 | PDF (40 pages) | ~1–2 min | download + pypdf + one analysis call |
 | Retrieval | < 200 ms | HNSW + GIN indexes |
 | Answer | 3–6 s | Sonnet 5.5, low effort, top-10 segments |
@@ -188,7 +190,7 @@ Known limits:
 
 ## 9. Cross-cutting concerns
 
-- **Configuration:** settings come from the environment (`ANTHROPIC_API_KEY`, `DATABASE_URL`, `ANALYSIS_MODEL=claude-opus-5-5`, `ANSWER_MODEL=claude-sonnet-5-5`, `INGEST_WORKERS=2`, `BANK_WORKERS=4`, `WHISPER_MODEL=large-v3-turbo`). Collections, lenses and prompts come from mounted files. `.env` is read when a container is **created**: after editing it run `docker compose up -d` (a `restart` keeps the old values).
+- **Configuration:** settings come from the environment (`ANTHROPIC_API_KEY`, `DATABASE_URL`, `ANALYSIS_MODEL=claude-opus-5-5`, `ANSWER_MODEL=claude-sonnet-5-5`, `INGEST_WORKERS=2`, `BANK_WORKERS=4`, `WHISPER_DEVICE=auto` (`mlx` / `cuda` / `cpu`), `WHISPER_MODEL=large-v3-turbo` (faster-whisper), `WHISPER_MLX_MODEL=mlx-community/whisper-large-v3-turbo` (Apple GPU)). Collections, lenses and prompts come from mounted files. `.env` is read when a container is **created**: after editing it run `docker compose up -d` (a `restart` keeps the old values).
 - **Errors:**
   - Ingest failures become `status=failed` with a readable `error`, and are never silent.
   - Model failures are retried by the SDK (429/5xx).
@@ -236,5 +238,8 @@ Known limits:
 cp .env.example .env          # add ANTHROPIC_API_KEY yourself
 docker compose up --build     # db + server + client (first build ~15 min: Chromium, embedding and Whisper models)
 make sync COLLECTION=yale     # Windows: docker compose exec server python -m app.sync yale
+# NVIDIA GPU:         make up-gpu            (instead of docker compose up --build)
+# Apple Silicon Mac:  make dev-mac, then make sync-mac COLLECTION=yale   (one-time setup: README)
+# curl localhost:8003/health  → "whisper" shows which speech-to-text backend is in use
 # open http://localhost:5176
 ```
