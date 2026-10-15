@@ -220,12 +220,25 @@ export interface InsightCitation {
   app_link: string;
 }
 
+export interface InsightEvidence {
+  source_id: number;
+  source_title: string;
+  source_type: SourceType;
+  quote: string;
+  role: 'supports' | 'opposes' | 'context';
+  app_link: string;
+  timestamp_s: number;
+}
+
 export interface Insight {
   kind: InsightKind;
   title: string;
   detail: string;
   tag: string | null;
   sources: InsightCitation[];
+  evidence?: InsightEvidence[];
+  confidence?: 'high' | 'medium' | 'low';
+  recommended_action?: string | null;
 }
 
 export interface CoverageTopic {

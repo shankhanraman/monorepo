@@ -56,15 +56,18 @@ def test_prioritize_breaks_ties_by_more_supporting_sources():
 
 
 SMAP = {
-    12: {"title": "Supplements podcast", "type": "youtube", "published_at": date(2025, 9, 15)},
-    13: {"title": "Essays page", "type": "web", "published_at": None},
+    12: {"title": "Supplements podcast", "type": "youtube", "published_at": date(2025, 9, 15),
+         "quote_records": [{"segment_id": 120, "ts_s": 42, "quote": "Name the seminar."}]},
+    13: {"title": "Essays page", "type": "web", "published_at": None,
+         "quote_records": [{"segment_id": 130, "ts_s": 0, "quote": "Name the seminar."}]},
 }
 
 
 def test_check_filters_unknown_source_ids_and_builds_citations():
     out = InsightsOut(insights=[
         InsightOut(kind="theme", title="Be specific", detail="Name the seminar.",
-                   tag="essays", source_ids=[12, 99, 12]),  # 99 unknown, 12 duplicated
+                   tag="essays", source_ids=[12, 99, 12],
+                   evidence=[{"source_id": 12, "quote": "Name the seminar."}]),  # 99 unknown, 12 duplicated
     ])
     kept = check(out, SMAP, ["essays", "testing"])
     assert len(kept) == 1
@@ -95,7 +98,8 @@ def test_check_keeps_gap_with_no_sources_but_requires_a_lens_tag():
 
 def test_check_normalizes_tag_case_to_lens_vocabulary():
     out = InsightsOut(insights=[
-        InsightOut(kind="theme", title="t", detail="d", tag="ESSAYS", source_ids=[13]),
+        InsightOut(kind="theme", title="t", detail="d", tag="ESSAYS", source_ids=[13],
+                   evidence=[{"source_id": 13, "quote": "Name the seminar."}]),
     ])
     kept = check(out, SMAP, ["essays"])
     assert kept[0]["tag"] == "essays"
