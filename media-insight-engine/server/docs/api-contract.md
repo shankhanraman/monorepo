@@ -9,7 +9,7 @@ All changes only add things, so Day-1 screens keep working. To use the new featu
 | Change | Where | UI work |
 |---|---|---|
 | New source types `audio` (podcast episodes) and `pdf` | `type` on sources and `source_type` on citations | type badges; source page: `<audio>` player for audio, page sections for PDFs |
-| `progress` (0–100) while transcribing | `SourceSummary` | show "transcribing 42 %" (an episode can take 10–20 min) |
+| `progress` (0–100) while transcribing | `SourceSummary` | show "transcribing 42 %" (on CPU an episode takes ~2× its length; stays 0 until done on `mlx`) |
 | `stale` flag on sources | `SourceSummary` | "may be outdated" badge in the list and on the source page |
 | `feed_url` (episode came from an RSS feed) | `SourceSummary`, `SyncEntry` | "from feed" note; group the sync log |
 | `media_url` (playable audio) | `SourceDetail` | `src` of the `<audio>` element |
@@ -68,8 +68,9 @@ The JSON samples below are the same examples, so you can also paste them into fi
 curl http://localhost:8003/health
 ```
 ```json
-{ "status": "ok" }
+{ "status": "ok", "whisper": "cpu" }
 ```
+`whisper` is the speech-to-text backend the server picked: `mlx` (Apple GPU), `cuda` (NVIDIA GPU) or `cpu`.
 
 ### List collections
 `GET /collections` returns every collection that has a config file, including ones that were never synced.
@@ -172,7 +173,7 @@ curl http://localhost:8003/collections/yale/sources
 ```
 - Status order: `queued → transcribing → analyzing → ready` or `failed` (with `error`).
 - `title` is `null` until metadata is fetched. Fall back to `label`, then `url`.
-- **`progress`** (Day 2) is set while an audio source, or a YouTube video without captions, is `transcribing`: show "transcribing 42 %" or a small progress bar. Transcribing a long episode takes 10–20 minutes, so keep polling.
+- **`progress`** (Day 2) is set while an audio source, or a YouTube video without captions, is `transcribing`: show "transcribing 42 %" or a small progress bar. Transcription is slow on CPU (about 2× the episode's length: a 37-minute episode took 1 h 15 min), so keep polling and show the percentage. On the Apple GPU backend (`/health` → `"whisper": "mlx"`) `progress` stays 0 until the episode is done, because mlx-whisper reports no progress.
 - **`stale`** (Day 2): show a "may be outdated" badge. It's true when the source is older than 18 months (the lens setting) or has no date.
 - **`feed_url`** (Day 2): the episode came from an RSS feed; you can show "from feed".
 

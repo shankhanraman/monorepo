@@ -1,0 +1,5 @@
+# generated keys and certificates (secrets)
+pki/out/
+.venv/
+__pycache__/
+.pytest_cache/

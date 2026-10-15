@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db import close_db, init_db, pool
 from app.routers import ask, banks, collections, notes, sources
-from app.services import jobs
+from app.services import audio, jobs
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -15,6 +15,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    logging.getLogger("audio").info("speech-to-text backend: %s", audio.backend())  # bad WHISPER_DEVICE fails here
     jobs.recover()
     yield
     close_db()
@@ -28,7 +29,7 @@ app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_me
 def health():
     with pool().connection() as conn:
         conn.execute("SELECT 1")
-    return {"status": "ok"}
+    return {"status": "ok", "whisper": audio.backend()}
 
 
 for r in (collections, sources, ask, banks, notes):

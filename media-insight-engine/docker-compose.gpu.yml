@@ -1,0 +1,11 @@
+# NVIDIA GPU transcription: make up-gpu
+#   (= docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d)
+# Needs the NVIDIA driver + NVIDIA Container Toolkit on the host. Apple GPUs: use make dev-mac instead.
+services:
+  server:
+    build:
+      args: { WHISPER_GPU: "1" }
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]

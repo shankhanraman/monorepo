@@ -20,9 +20,9 @@ sources:
   - url: https://oir.yale.edu/sites/default/files/yale_cds_2025-26_md_20260616.pdf
     label: "Yale Common Data Set 2025-26"
 
-  # Official podcast feed (56 episodes). Each episode takes ~12-20 min to transcribe locally,
-  # so start with 1 and raise `episodes` once you've seen it work.
+  # Official podcast feed (57 episodes on 2026-10-15). Each episode takes ~12-20 min to transcribe
+  # locally (~11-19 h for all). 200 is the max, so every episode, including new ones, gets synced.
   - url: https://yalepodcasts.blubrry.net/category/inside_yale_admissions/feed/podcast/
     label: Inside the Yale Admissions Office (podcast)
     type: rss
-    episodes: 1
+    episodes: 200

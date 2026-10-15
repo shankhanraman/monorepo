@@ -1,0 +1,3 @@
+# Native macOS on Apple Silicon (make dev-mac): adds Apple-GPU speech-to-text. Also needs: brew install ffmpeg
+-r requirements.txt
+mlx-whisper==0.4.3

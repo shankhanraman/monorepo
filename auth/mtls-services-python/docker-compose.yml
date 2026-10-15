@@ -1,0 +1,55 @@
+# Service-to-service mTLS, the way a service mesh does it: every app gets an Envoy sidecar in its own network
+# namespace (like containers in one Kubernetes pod). The apps listen on 127.0.0.1 only, so the ONLY way in is
+# through the sidecar, which requires a client certificate from the lab CA.
+services:
+  users-app:
+    build: ./users-service
+    networks: [mesh]
+    ports:
+      - "8444:8443"            # the users sidecar's mTLS port (published here: this container owns the netns)
+
+  users-proxy:
+    image: envoyproxy/envoy:v1.37-latest
+    network_mode: "service:users-app"   # sidecar: same network namespace as the app
+    depends_on: [users-app]
+    volumes:
+      - ./envoy/users.yaml:/etc/envoy/envoy.yaml:ro
+      - ./pki/out:/certs:ro
+
+  orders-app:
+    build: ./orders-service
+    networks: [mesh]
+    environment:
+      USERS_URL: http://127.0.0.1:9001  # our own sidecar's egress port; it adds mTLS
+    ports:
+      - "8443:8443"            # the orders sidecar's mTLS port
+      - "127.0.0.1:9901:9901"  # Envoy admin/stats (host loopback only, for learning)
+
+  orders-proxy:
+    image: envoyproxy/envoy:v1.37-latest
+    network_mode: "service:orders-app"
+    depends_on: [orders-app]
+    volumes:
+      - ./envoy/orders.yaml:/etc/envoy/envoy.yaml:ro
+      - ./pki/out:/certs:ro
+
+  # --- tools (only run on demand: docker compose run --rm pki ... / client ...) ---
+  pki:
+    build: ./pki
+    profiles: [tools]
+    network_mode: none        # the CA never needs a network
+    volumes:
+      - ./pki:/pki
+
+  client:
+    build: ./client
+    profiles: [tools]
+    networks: [mesh]
+    working_dir: /client
+    entrypoint: ["python"]
+    volumes:
+      - ./client:/client:ro
+      - ./pki/out:/certs:ro
+
+networks:
+  mesh:

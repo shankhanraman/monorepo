@@ -60,7 +60,17 @@ docker compose exec server python -m app.sync yale
 
 Spotify links are rejected (DRM); use the show's RSS feed instead.
 
-**Podcasts take a while.** Speech-to-text runs locally with faster-whisper `large-v3-turbo` (best accuracy on names and numbers): about **12–20 minutes for a 35-minute episode**, one episode at a time. The Sources page shows "transcribing 42 %". For faster results, set `WHISPER_MODEL=small.en` in `.env` (about 5 min per episode, less accurate) and run `docker compose up -d`. Audio files are deleted right after transcription.
+**Podcasts take a while.** Speech-to-text runs locally with faster-whisper `large-v3-turbo` (best accuracy on names and numbers): measured at about **2× the episode length** (a 37-minute episode took 1 h 15 min from Sync to ready), one episode at a time. The first podcast after a server start also waits ~3 min while the model loads; the audio download itself takes seconds. The Sources page shows "transcribing 42 %". For faster results, set `WHISPER_MODEL=small.en` in `.env` (several times faster, less accurate) and run `docker compose up -d`. Audio files are deleted right after transcription.
+
+**Use the GPU.** The server picks its speech-to-text backend from the machine (`WHISPER_DEVICE=auto`, or force `mlx` / `cuda` / `cpu`). `curl localhost:8003/health` shows which one it chose (`"whisper": "..."`).
+
+| Machine | Start with | Backend |
+|---|---|---|
+| Any (default) | `make up` | faster-whisper on CPU (the timings above) |
+| NVIDIA GPU + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) | `make up-gpu` | faster-whisper on CUDA |
+| Apple Silicon Mac | `make dev-mac`, then `make sync-mac COLLECTION=yale` | mlx-whisper on the Apple GPU |
+
+Docker on macOS can't reach the Mac GPU, so `make dev-mac` keeps Postgres and the client in Docker and runs the server natively. One-time setup: `brew install ffmpeg`, then in `server/`: `python3.12 -m venv .venv && .venv/bin/pip install -r requirements-mac.txt && .venv/bin/crawl4ai-setup`. On the Mac backend the Sources page shows 0 % until each episode finishes (mlx-whisper reports no progress).
 
 ## Tune without redeploying
 - **Lens** (domain, reader, focus, tags, segment length, staleness age): `config/lenses/*.yaml`. Re-sync to store it. It applies to sources analyzed from then on.
@@ -98,6 +108,8 @@ Deliberate deviation from the PRD: the Q&A step uses a small **LangGraph** graph
 - One analysis call per source handles about 150 segments (~2.5 h of video). Longer sources need chunking.
 - Web pages are crawled one at a time (Crawl4AI's SQLite cache can't handle parallel crawls).
 - Podcasts miss the PRD's 5-minute target with `large-v3-turbo` on CPU (see above); one transcription runs at a time.
+- Recreating the server container (`docker compose up --build`, or `up` after changing `.env`) restarts a running transcription from 0 %. Rebuild when nothing is transcribing.
+- `av` (PyAV) is pinned to 18.1.0 because PyAV 19 breaks faster-whisper 1.2.1; see architecture.md §9.
 - Scanned PDFs (no text layer) are rejected; there is no OCR.
 - New podcast episodes are picked up when you sync again; there is no scheduled sync (PRD Week 2+).
 - Background work runs inside the API process, so run a single server replica.
