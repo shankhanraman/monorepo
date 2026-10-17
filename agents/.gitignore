@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+dist/
+
+# Brainstorming visual companion scratch files
+.superpowers/
+
+# Native Mac server (make dev-mac)
+.venv/
