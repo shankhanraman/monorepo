@@ -14,7 +14,8 @@ knowledge base *and* manage it (sync, question banks, notes, insights).
 - **Scope:** full control — query + management.
 - **Integration:** mount the MCP server *inside* the existing FastAPI app (one process), served
   alongside `/docs` and `/health`.
-- **SDK:** the official MCP Python SDK (`mcp`, `FastMCP`), hand-authored tools.
+- **SDK:** the official MCP Python SDK (`mcp` **2.1.1**, already installed). Note: v2 renamed
+  `FastMCP` → `MCPServer` (`from mcp.server.mcpserver import MCPServer`). Tools are hand-authored.
 - **Transport:** streamable-HTTP, mounted at `/mcp`. Localhost-only, no auth (matches the
   existing localhost CORS posture).
 
@@ -35,15 +36,16 @@ Three load-bearing details, confirmed against the code:
    `fastapi.HTTPException`, re-raising as an MCP `ToolError` carrying `{status_code, detail}`.
    This reuses all validation + error translation.
 
-2. **Blocking work is offloaded off the event loop.** `answers.ask` and insights call Claude
-   synchronously; in-process they share the API's event loop. Verify how the pinned `mcp` SDK
-   runs handlers: if FastMCP offloads sync (`def`) tool handlers to a worker thread (like FastAPI
-   sync routes), keep tools sync; otherwise make them `async def` and wrap the blocking call in
-   `anyio.to_thread.run_sync(...)`. A Q&A call must never stall `/health` or `/docs`.
+2. **Blocking work is offloaded off the event loop.** Confirmed: in mcp 2.1.1 the tool manager
+   runs **sync (`def`) tool handlers on a worker thread** (`anyio.to_thread.run_sync`). So tools
+   are defined as plain `def` and call the blocking router/service functions directly — a Q&A call
+   never stalls `/health` or `/docs`, and no manual offloading is needed.
 
-3. **Lifespan is composed.** `streamable_http_app()`'s session manager runs a task group in its
-   own lifespan. `main.py`'s existing `lifespan` must also enter the MCP session manager's
-   context, or the first request crashes with "task group not initialized."
+3. **Lifespan is composed.** `streamable_http_app()` returns a Starlette app whose lifespan is
+   `session_manager.run()`. FastAPI does **not** run a mounted sub-app's lifespan, so `main.py`'s
+   `lifespan` enters `async with mcp.session_manager.run():` itself (the session manager exists
+   once `streamable_http_app()` has been called at import time). Mount: build the app with
+   `streamable_http_path="/"` and `app.mount("/mcp", mcp_app)` so the endpoint is exactly `/mcp`.
 
 ## Tool surface (~17 tools)
 

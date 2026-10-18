@@ -1,0 +1,13 @@
+{
+  "name": "mie-copilot-marketplace",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Agent Plugins 1.0 marketplace: the Media Insight Engine analyst agent + MCP for GitHub Copilot",
+  "scripts": {
+    "new:plugin": "node tools/new-plugin.mjs",
+    "new:agent": "node tools/new-agent.mjs",
+    "new:mcp": "node tools/new-mcp.mjs",
+    "validate": "node tools/validate.mjs"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "media-insight-engine": {
+      "type": "http",
+      "url": "http://localhost:8003/mcp/"
+    }
+  }
+}

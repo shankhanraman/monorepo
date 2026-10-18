@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db import close_db, init_db, pool
+from app.mcp_server import mcp, mcp_app
 from app.routers import ask, banks, collections, notes, sources
 from app.services import audio, jobs
 
@@ -17,7 +18,10 @@ async def lifespan(app: FastAPI):
     init_db()
     logging.getLogger("audio").info("speech-to-text backend: %s", audio.backend())  # bad WHISPER_DEVICE fails here
     jobs.recover()
-    yield
+    # The MCP server is mounted as a sub-app; FastAPI doesn't run a mount's lifespan, so enter the
+    # streamable-HTTP session manager here (it exists once mcp_server built mcp_app at import).
+    async with mcp.session_manager.run():
+        yield
     close_db()
 
 
@@ -34,3 +38,6 @@ def health():
 
 for r in (collections, sources, ask, banks, notes):
     app.include_router(r.router)
+
+# MCP server over streamable-HTTP at /mcp (mounts are excluded from the OpenAPI contract).
+app.mount("/mcp", mcp_app)

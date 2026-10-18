@@ -6,6 +6,7 @@ Turns admissions videos, podcasts, web pages and PDFs into a timestamped knowled
 |---|---|
 | Design | [architecture](server/docs/architecture.md) · [data models](server/docs/datamodels.md) · [data flow](server/docs/dataflow.md) |
 | API | [api-contract.md](server/docs/api-contract.md) (guide) · [openapi.yaml](server/docs/openapi.yaml) (contract) · live docs at http://localhost:8003/docs |
+| MCP | [mcp.md](server/docs/mcp.md) — tools + agents over Model Context Protocol at http://localhost:8003/mcp |
 | Stack | FastAPI (Python 3.12) · React + TypeScript + Vite · Postgres 17 + pgvector · Claude Opus 5.5 (analysis) / Sonnet 5.5 (answers) · LangGraph (Q&A loop) · Crawl4AI (web pages) · fastembed (local embeddings) · faster-whisper (podcast speech-to-text) · pypdf |
 
 ## Run it

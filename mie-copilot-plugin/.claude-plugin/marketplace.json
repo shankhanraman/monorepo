@@ -1,0 +1,13 @@
+{
+  "name": "mie-copilot-marketplace",
+  "owner": {
+    "name": "Mayank"
+  },
+  "plugins": [
+    {
+      "name": "media-insight",
+      "source": "./plugins/media-insight",
+      "description": "Media Insight Engine analyst agent + MCP for GitHub Copilot"
+    }
+  ]
+}

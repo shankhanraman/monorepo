@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Auth Labs — Start Here</title>
+  <style>
+    :root { color-scheme: light; --ink:#172033; --muted:#5d687b; --line:#dce3ed; --blue:#2563eb; --soft:#f5f8fc; --green:#087443; }
+    * { box-sizing:border-box; }
+    body { margin:0; font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif; color:var(--ink); background:var(--soft); }
+    main { max-width:1100px; margin:0 auto; padding:42px 22px 70px; }
+    header { background:linear-gradient(135deg,#172554,#2563eb); color:#fff; border-radius:22px; padding:42px; box-shadow:0 14px 35px #17255422; }
+    h1 { margin:0 0 8px; font-size:clamp(2rem,5vw,3.4rem); line-height:1.05; }
+    h2 { margin-top:42px; font-size:1.65rem; }
+    h3 { margin-bottom:6px; }
+    p { max-width:800px; }
+    .lead { color:#dbeafe; font-size:1.12rem; }
+    .badge { display:inline-block; padding:4px 10px; border-radius:999px; background:#ffffff22; color:#dbeafe; font-size:.85rem; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; }
+    .card, section { background:#fff; border:1px solid var(--line); border-radius:16px; padding:22px; box-shadow:0 4px 14px #1725540a; }
+    .card { display:flex; flex-direction:column; }
+    .card p { color:var(--muted); margin-top:5px; flex:1; }
+    a { color:var(--blue); font-weight:600; }
+    code { background:#eef2f7; padding:2px 5px; border-radius:5px; }
+    pre { overflow:auto; background:#111827; color:#e5e7eb; padding:17px; border-radius:12px; }
+    pre code { background:none; padding:0; color:inherit; }
+    .steps { border-left:4px solid var(--blue); padding-left:18px; }
+    .success { color:var(--green); font-weight:700; }
+    table { width:100%; border-collapse:collapse; margin:14px 0; }
+    th,td { text-align:left; padding:11px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+    th { background:#f1f5f9; }
+    .flow { white-space:pre-wrap; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:18px; }
+    footer { color:var(--muted); text-align:center; margin-top:35px; }
+    @media (max-width:650px) { header { padding:28px 22px; } th:nth-child(2),td:nth-child(2) { display:none; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="badge">Local development guide</span>
+    <h1>Auth labs: start here</h1>
+    <p class="lead">Runnable examples of API keys, JWT, OAuth 2.0, SAML, mTLS, and Kerberos protecting a FastAPI CRUD app.</p>
+  </header>
+
+  <h2>Choose a lab</h2>
+  <div class="grid">
+    <article class="card"><h3>API key</h3><p>Fastest demo for scripts and machine-to-machine calls. Send <code>X-API-Key</code>.</p><a href="api-key-python/">Open lab →</a></article>
+    <article class="card"><h3>Keycloak JWT</h3><p>Standard single-page app login. React sends a Bearer token to FastAPI.</p><a href="keycloak-jwt-python/">Open lab →</a></article>
+    <article class="card"><h3>OAuth 2.0 BFF</h3><p>Production-style browser pattern. The backend handles tokens; the browser gets a session cookie.</p><a href="oauth2-bff-python/">Open lab →</a></article>
+    <article class="card"><h3>SAML</h3><p>Enterprise SSO with Keycloak as IdP and FastAPI as the service provider.</p><a href="saml-python/">Open lab →</a></article>
+    <article class="card"><h3>mTLS</h3><p>Certificate-based service identity through nginx.</p><a href="mtls-python/">Open lab →</a></article>
+    <article class="card"><h3>Kerberos</h3><p>Passwordless corporate-style login using a Kerberos ticket through Keycloak.</p><a href="keykloak-python/">Open lab →</a></article>
+  </div>
+
+  <section>
+    <h2>Fastest start: API key</h2>
+    <p>Start Docker Desktop first, then run this in PowerShell:</p>
+    <pre><code>cd C:\Users\workf\OneDrive\Desktop\monorepo\auth\api-key-python\fastapi-seerver
+powershell -ExecutionPolicy Bypass -File scripts\setup-local-dev.ps1</code></pre>
+    <p>Open <a href="http://localhost:5177">http://localhost:5177</a>. Use this lab key to enable writes:</p>
+    <pre><code>mial_live_demo_do_not_use_in_prod</code></pre>
+    <p class="success">Reads are public. Writes without a valid key return 401.</p>
+    <p>API docs: <a href="http://localhost:8004/docs">http://localhost:8004/docs</a></p>
+  </section>
+
+  <section>
+    <h2>Recommended browser auth: JWT</h2>
+    <pre><code>cd C:\Users\workf\OneDrive\Desktop\monorepo\auth\keycloak-jwt-python\fastapi-seerver
+powershell -ExecutionPolicy Bypass -File scripts\setup-local-dev.ps1</code></pre>
+    <p>Open <a href="http://localhost:5174">http://localhost:5174</a> and log in with <code>alice</code> / <code>alice123</code>.</p>
+    <div class="flow">Browser → React :5174 → Keycloak :8081
+                         ← authorization code + PKCE
+React → FastAPI :8001 with Authorization: Bearer &lt;JWT&gt;
+FastAPI → verifies signature, issuer, audience, and expiry</div>
+    <h3>Read these files in order</h3>
+    <ol>
+      <li><code>keycloak-jwt-python/frontend/src/auth/</code> — login and token usage.</li>
+      <li><code>keycloak-jwt-python/fastapi-seerver/app/dependencies.py</code> — token verification.</li>
+      <li><code>keycloak-jwt-python/fastapi-seerver/app/routers/users.py</code> — protected routes.</li>
+      <li><code>keycloak-jwt-python/keycloak/jwt-lab-realm.json</code> — realm configuration.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Recommended production-style browser auth: OAuth BFF</h2>
+    <pre><code>cd C:\Users\workf\OneDrive\Desktop\monorepo\auth\oauth2-bff-python\fastapi-seerver
+powershell -ExecutionPolicy Bypass -File scripts\setup-local-dev.ps1</code></pre>
+    <p>Open <a href="http://localhost:5175">http://localhost:5175</a> and log in with <code>alice</code> / <code>alice123</code>.</p>
+    <div class="flow">Browser → FastAPI /auth/login → Keycloak :8082
+Browser ← one-time callback code
+FastAPI → exchanges code server-to-server using client secret
+FastAPI → creates a database session
+Browser ← HttpOnly bff_session cookie
+Writes require the cookie plus X-CSRF</div>
+  </section>
+
+  <section>
+    <h2>How authentication works</h2>
+    <p class="flow">credential arrives → server validates it → request gets an identity → protected route allows or denies</p>
+    <table>
+      <thead><tr><th>Method</th><th>Validation</th></tr></thead>
+      <tbody>
+        <tr><td>API key</td><td>Hash the key, find an active database row, then allow.</td></tr>
+        <tr><td>JWT</td><td>Verify Keycloak signature, issuer, audience, and expiry.</td></tr>
+        <tr><td>OAuth BFF</td><td>Look up the random session cookie; require CSRF protection on writes.</td></tr>
+        <tr><td>SAML</td><td>Validate the signed assertion, then issue a session cookie.</td></tr>
+        <tr><td>mTLS</td><td>nginx verifies the client certificate before forwarding identity to FastAPI.</td></tr>
+        <tr><td>Kerberos</td><td>Keycloak validates the SPNEGO ticket and issues a JWT.</td></tr>
+      </tbody>
+    </table>
+    <p>These labs primarily demonstrate authentication. A successful login is not authorization; the demos do not implement per-user ownership or roles.</p>
+  </section>
+
+  <section>
+    <h2>Tests and troubleshooting</h2>
+    <pre><code>.venv\Scripts\python.exe -m pytest
+npm test
+npm run build</code></pre>
+    <ul>
+      <li>Docker errors: start Docker Desktop and confirm <code>docker info</code> works.</li>
+      <li>Missing tables: run <code>alembic upgrade head</code> in the lab backend directory.</li>
+      <li>Redirect URI errors: use the exact frontend port for the selected lab.</li>
+      <li>Keycloak not ready: wait 30–60 seconds, then run <code>docker compose logs keycloak</code>.</li>
+      <li>Reset everything: <code>docker compose down -v</code> deletes lab data.</li>
+    </ul>
+  </section>
+
+  <footer>See also <a href="START-HERE.md">START-HERE.md</a> and <a href="LIVE-TEST-RESULTS.md">LIVE-TEST-RESULTS.md</a>.</footer>
+</main>
+</body>
+</html>
