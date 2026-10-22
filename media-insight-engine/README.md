@@ -94,6 +94,17 @@ cd client && npm test && npm run build
 
 **Golden set (AC-11):** fill [golden/yale.yaml](golden/yale.yaml) with 10 questions and the moment that should be cited, then run `make golden COLLECTION=yale` (Windows: `docker compose exec server python -m app.golden yale`). The target is ≥ 8/10.
 
+## CI/CD
+[.github/workflows/media-insight-engine.yml](../.github/workflows/media-insight-engine.yml) runs on every PR and push that touches this folder:
+
+| Job | When | What |
+|---|---|---|
+| `server` | always | `pytest` against a throwaway pgvector Postgres (password auth, no Vault) |
+| `client` | always | `npm test` + `npm run build` (typecheck + Vite build) |
+| `publish` | push to `main`, after both pass | builds and pushes `ghcr.io/shankhanraman/mie-server` and `mie-client` (tags: commit SHA and `latest`) |
+
+The golden set isn't run in CI (it needs `ANTHROPIC_API_KEY`). The `mie-client` image is the production build: nginx serves the app and proxies `/api/*` to a service named `server` on port 8003. Local `docker compose` still builds the dev target. GHCR packages are private by default: change it under the repo owner's **Packages → Package settings**.
+
 ## Decisions taken where the PRD left questions open
 | Open question (PRD §8) | Day-1 default |
 |---|---|
