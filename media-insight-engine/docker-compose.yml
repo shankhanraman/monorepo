@@ -85,7 +85,7 @@ services:
       cert-init: { condition: service_completed_successfully }
 
   client:
-    build: ./client
+    build: { context: ./client, target: dev }   # the Dockerfile's last stage is the nginx prod image
     environment:
       VITE_API_URL: http://localhost:8003
       VITE_USE_POLLING: "1"             # file events don't cross Windows bind mounts; poll instead
