@@ -1,34 +1,88 @@
 # One command: docker compose up --build   (copy .env.example to .env first)
 services:
+  vault:
+    image: hashicorp/vault:1.18
+    cap_add: [IPC_LOCK]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID:-root}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    command: server -dev                 # dev mode: in-memory, auto-unsealed. Local only.
+    ports: ["127.0.0.1:8200:8200"]
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 3s
+      retries: 20
+
+  cert-init:                             # one-shot: generate certs, place server certs, seed Vault
+    image: hashicorp/vault:1.18
+    user: root                           # needs root to chown the server key to the postgres uid
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_DEV_ROOT_TOKEN_ID:-root}
+    entrypoint: ["/bin/sh", "/scripts/cert-init.sh"]
+    volumes:
+      - ./scripts:/scripts:ro
+      - certsrc:/certs/src               # persistent CA material (this container only)
+      - pgcerts:/certs/pg                # server cert/key + CA for Postgres
+      - vaulttoken:/certs/shared         # scoped Vault token for the app
+    depends_on:
+      vault: { condition: service_healthy }
+
   db:
     image: pgvector/pgvector:pg17
     environment:
       POSTGRES_DB: mie
       POSTGRES_USER: mie
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}  # db init + non-TLS fallback
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/etc/postgres/certs/server.crt
+      - -c
+      - ssl_key_file=/etc/postgres/certs/server.key
+      - -c
+      - ssl_ca_file=/etc/postgres/certs/ca.crt
+      - -c
+      - hba_file=/etc/postgres/pg_hba.conf
     ports: ["127.0.0.1:5437:5432"]
-    volumes: [pgdata:/var/lib/postgresql/data]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - pgcerts:/etc/postgres/certs:ro
+      - ./postgres/pg_hba.conf:/etc/postgres/pg_hba.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mie -d mie"]
       interval: 3s
       retries: 20
+    depends_on:
+      cert-init: { condition: service_completed_successfully }
 
   server:
     build: ./server
     env_file: .env                      # ANTHROPIC_API_KEY lives here, never in the repo
     environment:
-      DATABASE_URL: postgresql://mie:${POSTGRES_PASSWORD}@db:5432/mie
+      DB_AUTH: cert                      # mutual TLS; client cert fetched from Vault at startup
+      DATABASE_URL: postgresql://mie@db:5432/mie   # no password — the client cert authenticates
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN_FILE: /certs-shared/vault-token
+      VAULT_DB_CERT_PATH: mie/db-client
+      DB_CERT_DIR: /run/mie-certs
       CONFIG_DIR: /config
       PROMPTS_DIR: /prompts
       GOLDEN_DIR: /golden
+    tmpfs:
+      - /run/mie-certs                   # client key/cert live in RAM, never on disk
     volumes:
       - ./config:/config:ro             # edit YAML, then sync; no rebuild
       - ./prompts:/prompts:ro           # prompts are re-read on every call
       - ./golden:/golden:ro
+      - vaulttoken:/certs-shared:ro     # read the scoped Vault token
     ports: ["127.0.0.1:8003:8003"]
     shm_size: 1gb                       # headless Chromium (Crawl4AI) needs shared memory
     depends_on:
       db: { condition: service_healthy }
+      cert-init: { condition: service_completed_successfully }
 
   client:
     build: ./client
@@ -42,3 +96,6 @@ services:
 
 volumes:
   pgdata:
+  certsrc:
+  pgcerts:
+  vaulttoken:

@@ -20,7 +20,9 @@ up-gpu:  ## NVIDIA GPU transcription (needs NVIDIA Container Toolkit)
 # Apple Silicon: Docker can't reach the Mac GPU, so the server runs natively (db + client stay in Docker).
 # One-time: cd server && python3.12 -m venv .venv && .venv/bin/pip install -r requirements-mac.txt
 #           && .venv/bin/crawl4ai-setup && brew install ffmpeg
-MAC_ENV = set -a && . ./.env && DATABASE_URL=postgresql://mie:$$POSTGRES_PASSWORD@localhost:5437/mie CONFIG_DIR=$(CURDIR)/config PROMPTS_DIR=$(CURDIR)/prompts GOLDEN_DIR=$(CURDIR)/golden && set +a
+# Native server uses the non-TLS password fallback: DB_AUTH=password + sslmode=disable so it
+# matches the `host … scram-sha-256` rule in pg_hba.conf rather than the cert-only `hostssl` rule.
+MAC_ENV = set -a && . ./.env && DB_AUTH=password DATABASE_URL="postgresql://mie:$$POSTGRES_PASSWORD@localhost:5437/mie?sslmode=disable" CONFIG_DIR=$(CURDIR)/config PROMPTS_DIR=$(CURDIR)/prompts GOLDEN_DIR=$(CURDIR)/golden && set +a
 
 dev-mac:  ## Apple GPU: db + client in Docker, server native on :8003
 	docker compose up -d --no-deps db client

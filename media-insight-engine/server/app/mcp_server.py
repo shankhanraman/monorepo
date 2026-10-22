@@ -191,3 +191,4 @@ def delete_note(note_id: int) -> dict:
 
 # ASGI app for mounting at /mcp. streamable_http_path="/" so the mount point IS the endpoint.
 mcp_app = mcp.streamable_http_app(streamable_http_path="/")
+ 

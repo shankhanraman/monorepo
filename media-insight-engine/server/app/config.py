@@ -12,6 +12,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 class Settings:
     database_url = os.environ.get("DATABASE_URL", "postgresql://mie:mie@localhost:5437/mie")
+    # DB auth: "password" (default; existing/local behavior) or "cert" (mutual TLS, certs from Vault).
+    db_auth = os.environ.get("DB_AUTH", "password")
+    vault_addr = os.environ.get("VAULT_ADDR", "http://vault:8200")
+    vault_token = os.environ.get("VAULT_TOKEN", "")            # empty -> read vault_token_file instead
+    vault_token_file = os.environ.get("VAULT_TOKEN_FILE", "/certs-shared/vault-token")
+    vault_db_cert_path = os.environ.get("VAULT_DB_CERT_PATH", "mie/db-client")
+    db_cert_dir = os.environ.get("DB_CERT_DIR", "/run/mie-certs")  # tmpfs; keys live in RAM only
     config_dir = Path(os.environ.get("CONFIG_DIR", "/config"))
     prompts_dir = Path(os.environ.get("PROMPTS_DIR", "/prompts"))
     golden_dir = Path(os.environ.get("GOLDEN_DIR", "/golden"))

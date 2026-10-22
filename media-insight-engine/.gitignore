@@ -10,3 +10,9 @@ dist/
 
 # Native Mac server (make dev-mac)
 .venv/
+
+# TLS material — must only ever live in Docker volumes / Vault, never the working tree
+*.key
+*.crt
+*.csr
+*.srl
