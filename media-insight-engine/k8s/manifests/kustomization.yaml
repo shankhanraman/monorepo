@@ -1,0 +1,24 @@
+# Base: env-agnostic. Deploy through an overlay (overlays/<env>), which sets the namespace, images and the
+# env-specific Vault annotations: kubectl apply -k overlays/dev (scripts/deploy.sh does this and more).
+#
+# The config/prompts/golden ConfigMaps (mie-collections, mie-lenses, mie-prompts, mie-golden) are NOT here:
+# Kustomize can't build a ConfigMap from a whole folder, so scripts/deploy.sh creates them from the app's
+# folders (adding a college YAML needs no edit here) and rolls the server only when their content changes.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespaces/namespace.yaml
+  - secrets/serviceaccounts.yaml
+  - configmaps/server-env.yaml
+  - configmaps/postgres-hba.yaml
+  - deployments/postgres.yaml
+  - deployments/server.yaml
+  - deployments/client.yaml
+  - services/postgres.yaml
+  - services/server.yaml
+  - services/client.yaml
+  - ingresses/mie.yaml
+
+labels:
+  - pairs: { app.kubernetes.io/part-of: media-insight-engine }

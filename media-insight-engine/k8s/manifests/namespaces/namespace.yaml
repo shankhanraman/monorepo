@@ -1,0 +1,5 @@
+# Renamed per environment by the overlay's `namespace:` (mie-dev, mie-test, mie-prod).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mie

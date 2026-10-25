@@ -1,0 +1,59 @@
+# FastAPI server. The Vault agent sidecar (added by the injector) logs in as service account mie-server and
+# writes into /vault/secrets/ (in memory):
+#   app.env        export lines from secret/mie/<env>/app (your .env), sourced by the command below
+#   db-client.pem  client cert + key (CN=mie, 24h, renewed automatically)
+#   ca.crt         Vault's CA, to verify the Postgres server cert
+# Which Vault role and paths: overlays/<env>/vault-patch.yaml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+  labels: { app: server }
+spec:
+  replicas: 1                 # ingest jobs run inside the process; a second replica would resume the same jobs
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: server }
+  template:
+    metadata:
+      labels: { app: server }
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/agent-inject-perms-app.env: "0400"
+        vault.hashicorp.com/agent-inject-perms-db-client.pem: "0600"   # libpq refuses a group/world-readable key
+    spec:
+      serviceAccountName: mie-server
+      containers:
+        - name: server
+          image: mie-server
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", ". /vault/secrets/app.env && exec uvicorn app.main:app --host 0.0.0.0 --port 8003"]
+          envFrom:
+            - configMapRef: { name: server-env }
+          ports:
+            - { name: http, containerPort: 8003 }
+          readinessProbe:               # /health also checks the database (so: the TLS client-cert login)
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:                # TCP only: a database blip shouldn't restart the server mid-transcription
+            tcpSocket: { port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:                    # the Whisper model takes ~2 GB once the first podcast loads it
+            requests: { cpu: 500m, memory: 3Gi }
+            limits: { memory: 4Gi }
+          volumeMounts:
+            - { name: collections, mountPath: /config/collections, readOnly: true }
+            - { name: lenses, mountPath: /config/lenses, readOnly: true }
+            - { name: prompts, mountPath: /prompts, readOnly: true }
+            - { name: golden, mountPath: /golden, readOnly: true }
+            - { name: shm, mountPath: /dev/shm }
+      volumes:
+        # Created by scripts/deploy.sh from the app's folders (see manifests/kustomization.yaml)
+        - { name: collections, configMap: { name: mie-collections } }
+        - { name: lenses, configMap: { name: mie-lenses } }
+        - { name: prompts, configMap: { name: mie-prompts } }
+        - { name: golden, configMap: { name: mie-golden } }
+        - name: shm                     # headless Chromium (Crawl4AI) needs shared memory (compose: shm_size 1gb)
+          emptyDir: { medium: Memory, sizeLimit: 1Gi }
