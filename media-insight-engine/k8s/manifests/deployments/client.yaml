@@ -1,0 +1,27 @@
+# The production client image (nginx, Dockerfile target "prod"). Its nginx.conf proxies /api/* to
+# http://server:8003, which is why the API's Service is named "server".
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: client
+  labels: { app: client }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: client }
+  template:
+    metadata:
+      labels: { app: client }
+    spec:
+      containers:
+        - name: client
+          image: mie-client
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 80 }
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { memory: 128Mi }

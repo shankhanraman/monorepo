@@ -1,0 +1,23 @@
+# test: the images CI published to GHCR, pinned to a commit. To promote a new build, change newTag to the
+# commit SHA of a green "media-insight-engine" run on main (see ../../ci-cd/README.md).
+#   scripts/deploy.sh test
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: mie-test
+
+resources:
+  - ../../manifests
+
+images:
+  - { name: mie-server, newName: ghcr.io/shankhanraman/mie-server, newTag: a7a0a4005b66d7764d02a1e6129997d54fccbbe2 }
+  - { name: mie-client, newName: ghcr.io/shankhanraman/mie-client, newTag: a7a0a4005b66d7764d02a1e6129997d54fccbbe2 }
+
+patches:
+  - path: vault-patch.yaml
+  - target: { kind: Ingress, name: mie }
+    patch: |-
+      - { op: replace, path: /spec/rules/0/host, value: mie-test.local }
+  # GHCR packages are private by default; deploy.sh creates ghcr-pull when GHCR_TOKEN is set
+  - target: { kind: Deployment }
+    patch: |-
+      - { op: add, path: /spec/template/spec/imagePullSecrets, value: [{ name: ghcr-pull }] }

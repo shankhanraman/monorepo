@@ -1,0 +1,10 @@
+# Its DNS names (postgres, postgres.<ns>.svc[.cluster.local]) are the SANs on the Vault-issued server cert,
+# which the app checks with sslmode=verify-full.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector: { app: postgres }
+  ports:
+    - { name: postgres, port: 5432, targetPort: postgres }

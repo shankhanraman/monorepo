@@ -1,0 +1,18 @@
+# dev: images built locally into minikube by scripts/deploy.sh dev, small footprint.
+#   scripts/deploy.sh dev    (or, once images and Vault are in place: kubectl apply -k overlays/dev)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: mie-dev
+
+resources:
+  - ../../manifests
+
+images:
+  - { name: mie-server, newTag: dev }   # minikube image build -t mie-server:dev
+  - { name: mie-client, newTag: dev }
+
+patches:
+  - path: vault-patch.yaml
+  - target: { kind: Ingress, name: mie }
+    patch: |-
+      - { op: replace, path: /spec/rules/0/host, value: mie-dev.local }
