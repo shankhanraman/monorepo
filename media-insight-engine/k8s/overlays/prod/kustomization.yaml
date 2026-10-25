@@ -1,0 +1,31 @@
+# prod: same GHCR images as test once they've passed there, with more headroom.
+#   scripts/deploy.sh prod
+# ponytail: still 1 server replica (ingest jobs run in-process); scale out needs a separate worker first.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: mie-prod
+
+resources:
+  - ../../manifests
+
+images:
+  - { name: mie-server, newName: ghcr.io/shankhanraman/mie-server, newTag: a7a0a4005b66d7764d02a1e6129997d54fccbbe2 }
+  - { name: mie-client, newName: ghcr.io/shankhanraman/mie-client, newTag: a7a0a4005b66d7764d02a1e6129997d54fccbbe2 }
+
+replicas:
+  - { name: client, count: 2 }
+
+patches:
+  - path: vault-patch.yaml
+  - target: { kind: Ingress, name: mie }
+    patch: |-
+      - { op: replace, path: /spec/rules/0/host, value: mie-prod.local }
+  - target: { kind: Deployment }
+    patch: |-
+      - { op: add, path: /spec/template/spec/imagePullSecrets, value: [{ name: ghcr-pull }] }
+  - target: { kind: Deployment, name: server }
+    patch: |-
+      - { op: replace, path: /spec/template/spec/containers/0/resources, value: { requests: { cpu: "1", memory: 4Gi }, limits: { memory: 6Gi } } }
+  - target: { kind: StatefulSet, name: postgres }
+    patch: |-
+      - { op: replace, path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage, value: 10Gi }

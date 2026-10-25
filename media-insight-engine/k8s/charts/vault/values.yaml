@@ -1,0 +1,19 @@
+# hashicorp/vault chart 0.34.1, installed by scripts/minikube-up.sh into namespace "vault".
+# Local only: dev mode keeps everything in memory and is unsealed with a fixed root token, so a Vault
+# restart wipes KV/PKI/auth. scripts/deploy.sh re-runs vault-bootstrap.sh every time to put it back.
+# ponytail: dev mode; for anything real use server.ha (raft storage) + auto-unseal (see docs/architecture.md)
+server:
+  dev:
+    enabled: true
+    devRootToken: root
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 256Mi }
+
+# The Agent Injector: a mutating webhook that adds the vault-agent sidecar to pods annotated
+# vault.hashicorp.com/agent-inject: "true" (server, postgres).
+injector:
+  enabled: true
+
+ui:
+  enabled: true   # kubectl -n vault port-forward svc/vault-ui 8200 → http://localhost:8200/ui (token: root)

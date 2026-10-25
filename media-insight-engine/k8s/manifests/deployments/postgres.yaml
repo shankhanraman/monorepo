@@ -1,0 +1,68 @@
+# Postgres + pgvector. The Vault agent logs in as service account mie-postgres and writes into /vault/secrets/:
+#   server.pem  server cert + key (DNS: postgres, postgres.<ns>.svc...), used as both ssl_cert_file and ssl_key_file
+#   ca.crt      Vault's CA, to verify the app's client certs
+#   pgpass      POSTGRES_PASSWORD from secret/mie/<env>/postgres (read by the image via POSTGRES_PASSWORD_FILE)
+# The agent runs as the same uid (999) so Postgres accepts the key's ownership.
+# ponytail: Postgres only reads its cert at start; the 30-day cert is renewed by the agent but picked up on the
+# next pod restart. Add a reload (SIGHUP) on renewal if certs should rotate faster.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels: { app: postgres }
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/agent-run-as-same-user: "true"
+        vault.hashicorp.com/agent-inject-perms-server.pem: "0600"
+        vault.hashicorp.com/agent-inject-perms-pgpass: "0400"
+    spec:
+      serviceAccountName: mie-postgres
+      securityContext: { fsGroup: 999 }
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg17
+          imagePullPolicy: IfNotPresent
+          securityContext: { runAsUser: 999, runAsGroup: 999 }
+          args:
+            - -c
+            - ssl=on
+            - -c
+            - ssl_cert_file=/vault/secrets/server.pem
+            - -c
+            - ssl_key_file=/vault/secrets/server.pem
+            - -c
+            - ssl_ca_file=/vault/secrets/ca.crt
+            - -c
+            - hba_file=/etc/postgres/pg_hba.conf
+          env:
+            - { name: POSTGRES_DB, value: mie }
+            - { name: POSTGRES_USER, value: mie }
+            - { name: POSTGRES_PASSWORD_FILE, value: /vault/secrets/pgpass }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }   # subfolder: the volume root has lost+found
+          ports:
+            - { name: postgres, containerPort: 5432 }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "mie", "-d", "mie"] }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: hba, mountPath: /etc/postgres, readOnly: true }
+      volumes:
+        - { name: hba, configMap: { name: postgres-hba } }
+  # See manifests/storage/README.md
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 2Gi } }

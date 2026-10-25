@@ -1,0 +1,54 @@
+# Which Vault role each pod logs in with, and what the agent writes to /vault/secrets/.
+# Same in every overlay except the "test" in role names and paths (Kustomize has no templating).
+# Roles, policies and PKI roles: scripts/vault-bootstrap.sh test
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+spec:
+  template:
+    metadata:
+      annotations:
+        vault.hashicorp.com/role: mie-test-server
+        # Your .env, as shell export lines (single-quoted, so $ or spaces in a value stay literal)
+        vault.hashicorp.com/agent-inject-secret-app.env: secret/data/mie/test/app
+        vault.hashicorp.com/agent-inject-template-app.env: |
+          {{- with secret "secret/data/mie/test/app" -}}
+          {{- range $k, $v := .Data.data }}
+          export {{ $k }}='{{ $v | replaceAll "'" "'\\''" }}'
+          {{- end }}
+          {{- end }}
+        # Client cert + CA + key from ONE issue call, so cert and key always match (libpq reads both from it)
+        vault.hashicorp.com/agent-inject-secret-db-client.pem: pki/issue/mie-test-db-client
+        vault.hashicorp.com/agent-inject-template-db-client.pem: |
+          {{- with secret "pki/issue/mie-test-db-client" "common_name=mie" "ttl=24h" -}}
+          {{ .Data.certificate }}
+          {{ .Data.issuing_ca }}
+          {{ .Data.private_key }}
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-ca.crt: pki/cert/ca
+        vault.hashicorp.com/agent-inject-template-ca.crt: |
+          {{- with secret "pki/cert/ca" -}}{{ .Data.certificate }}{{- end }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  template:
+    metadata:
+      annotations:
+        vault.hashicorp.com/role: mie-test-postgres
+        vault.hashicorp.com/agent-inject-secret-server.pem: pki/issue/mie-test-db-server
+        vault.hashicorp.com/agent-inject-template-server.pem: |
+          {{- with secret "pki/issue/mie-test-db-server" "common_name=postgres" "alt_names=postgres.mie-test.svc,postgres.mie-test.svc.cluster.local" "ttl=720h" -}}
+          {{ .Data.certificate }}
+          {{ .Data.issuing_ca }}
+          {{ .Data.private_key }}
+          {{- end }}
+        vault.hashicorp.com/agent-inject-secret-ca.crt: pki/cert/ca
+        vault.hashicorp.com/agent-inject-template-ca.crt: |
+          {{- with secret "pki/cert/ca" -}}{{ .Data.certificate }}{{- end }}
+        vault.hashicorp.com/agent-inject-secret-pgpass: secret/data/mie/test/postgres
+        vault.hashicorp.com/agent-inject-template-pgpass: |
+          {{- with secret "secret/data/mie/test/postgres" -}}{{ .Data.data.POSTGRES_PASSWORD }}{{- end }}

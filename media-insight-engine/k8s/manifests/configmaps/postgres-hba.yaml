@@ -1,0 +1,12 @@
+# Stricter than Docker Compose's postgres/pg_hba.conf: no plain-TCP rule at all.
+# First matching line wins.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-hba
+data:
+  pg_hba.conf: |
+    # TYPE   DATABASE  USER  ADDRESS  METHOD
+    local    all       all            trust                           # inside the pod only (initdb, probes, kubectl exec psql)
+    hostssl  mie       mie   all      cert clientcert=verify-full     # the app: Vault-issued client cert, CN must be "mie"
+    hostssl  all       all   all      scram-sha-256                   # admin access: password, but still over TLS

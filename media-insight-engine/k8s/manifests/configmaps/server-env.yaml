@@ -1,0 +1,16 @@
+# Non-secret settings. Secrets (and any overrides in your .env) come from Vault as /vault/secrets/app.env,
+# which the server's command sources after this, so a value in .env wins over the defaults here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: server-env
+data:
+  # TLS client-cert login. The cert, key and CA are files the Vault agent writes (and renews); libpq rereads
+  # them on every new connection. DB_AUTH=password means "use DATABASE_URL as is": the app's own
+  # Vault/KV cert fetch (Docker Compose's DB_AUTH=cert path) isn't used in Kubernetes.
+  DATABASE_URL: "postgresql://mie@postgres:5432/mie?sslmode=verify-full&sslrootcert=/vault/secrets/ca.crt&sslcert=/vault/secrets/db-client.pem&sslkey=/vault/secrets/db-client.pem"
+  DB_AUTH: password
+  CONFIG_DIR: /config
+  PROMPTS_DIR: /prompts
+  GOLDEN_DIR: /golden
+  WHISPER_DEVICE: cpu   # no GPU in minikube
