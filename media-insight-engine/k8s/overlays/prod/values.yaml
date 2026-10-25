@@ -1,0 +1,17 @@
+# Helm values for prod.
+#   helm upgrade --install mie mie/media-insight-engine -n mie-prod --create-namespace -f overlays/prod/values.yaml
+# ponytail: still 1 server replica (ingest jobs run in-process); scale out needs a separate worker first.
+env: prod
+imagePullSecrets: [{ name: ghcr-pull }]
+
+server:
+  resources:
+    requests: { cpu: "1", memory: 4Gi }
+    limits: { memory: 6Gi }
+client:
+  replicas: 2
+postgres:
+  storage: 10Gi
+
+ingress:
+  host: mie-prod.local

@@ -1,0 +1,44 @@
+# Publishes the media-insight-engine Helm chart to the Helm repo on GitHub Pages:
+#   helm repo add mie https://shankhanraman.github.io/monorepo
+# On a push to main that changes the chart, chart-releaser packages every chart whose version is new,
+# creates a GitHub Release (<chart>-<version>) with the .tgz, and updates index.yaml on the gh-pages branch.
+# Bump `version` in Chart.yaml to publish; an existing version is skipped.
+name: helm-release
+
+on:
+  push:
+    branches: [main]
+    paths: [media-insight-engine/k8s/charts/**, .github/workflows/helm-release.yml]
+
+permissions:
+  contents: write   # create the release and push index.yaml to gh-pages
+
+concurrency:
+  group: helm-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # chart-releaser diffs against the last release tag
+      - run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+      - uses: azure/setup-helm@v4
+      # The chart's ConfigMaps come from files/ (gitignored): copy the app's config/prompts/golden in,
+      # so the packaged chart carries them
+      - run: bash media-insight-engine/k8s/scripts/chart-files.sh
+      - run: |
+          for env in dev test prod; do
+            helm lint media-insight-engine/k8s/charts/media-insight-engine -n "mie-$env" \
+              -f "media-insight-engine/k8s/overlays/$env/values.yaml"
+          done
+      - uses: helm/chart-releaser-action@v1.7.0
+        with:
+          charts_dir: media-insight-engine/k8s/charts   # charts/vault has no Chart.yaml and is skipped
+          skip_existing: true
+        env:
+          CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}

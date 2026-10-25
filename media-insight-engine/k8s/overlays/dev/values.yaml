@@ -1,0 +1,13 @@
+# Helm values for dev (the Kustomize equivalent is kustomization.yaml next to this file).
+#   scripts/chart-files.sh
+#   helm upgrade --install mie charts/media-insight-engine -n mie-dev --create-namespace -f overlays/dev/values.yaml
+env: dev
+
+# Images built inside minikube (scripts/deploy.sh dev builds them)
+server:
+  image: { repository: mie-server, tag: dev }
+client:
+  image: { repository: mie-client, tag: dev }
+
+ingress:
+  host: mie-dev.local

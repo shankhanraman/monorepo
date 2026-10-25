@@ -1,0 +1,28 @@
+# The production client image (nginx). Its nginx.conf proxies /api/* to http://server:8003.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mie.fullname" . }}-client
+  labels: {{- include "mie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: client
+spec:
+  replicas: {{ .Values.client.replicas }}
+  selector:
+    matchLabels: {{- include "mie.selector" (list . "client") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "mie.selector" (list . "client") | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: client
+          image: {{ include "mie.image" (list . .Values.client.image) }}
+          imagePullPolicy: {{ .Values.client.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 80 }
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 10
+          resources: {{- toYaml .Values.client.resources | nindent 12 }}

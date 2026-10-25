@@ -1,0 +1,7 @@
+# Helm values for test: the GHCR images at the chart's appVersion (a commit SHA CI published).
+#   helm upgrade --install mie mie/media-insight-engine -n mie-test --create-namespace -f overlays/test/values.yaml
+env: test
+imagePullSecrets: [{ name: ghcr-pull }]   # while the GHCR packages are private
+
+ingress:
+  host: mie-test.local

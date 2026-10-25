@@ -1,0 +1,56 @@
+# media-insight-engine chart. Per-environment overrides: ../../overlays/<env>/values.yaml
+#
+# Prerequisites (once per cluster / environment, see README.md):
+#   1. Vault with the Agent Injector (../vault/values.yaml, scripts/minikube-up.sh)
+#   2. scripts/vault-bootstrap.sh <env>: puts .env secrets, PKI roles and Kubernetes auth roles in Vault
+#   3. install into namespace mie-<env> (the Vault roles are bound to it)
+
+# Vault environment: role mie-<env>-server/-postgres, KV secret/mie/<env>/*, PKI roles mie-<env>-db-*.
+# The release namespace must be mie-<env>.
+env: dev
+
+# e.g. [{ name: ghcr-pull }] while the GHCR images are private:
+#   kubectl -n mie-<env> create secret docker-registry ghcr-pull --docker-server=ghcr.io \
+#     --docker-username=<user> --docker-password=<PAT with read:packages>
+imagePullSecrets: []
+
+server:
+  image:
+    repository: ghcr.io/shankhanraman/mie-server
+    tag: ""            # default: the chart's appVersion
+    pullPolicy: IfNotPresent
+  resources:           # the Whisper model takes ~2 GB once the first podcast loads it
+    requests: { cpu: 500m, memory: 3Gi }
+    limits: { memory: 4Gi }
+  # Non-secret settings (secrets and .env overrides come from Vault and win over these)
+  env:
+    WHISPER_DEVICE: cpu
+
+client:
+  replicas: 1
+  image:
+    repository: ghcr.io/shankhanraman/mie-client
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { memory: 128Mi }
+
+postgres:
+  image:
+    repository: pgvector/pgvector
+    tag: pg17
+    pullPolicy: IfNotPresent
+  storage: 2Gi
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+
+vault:
+  clientCertTTL: 24h   # the server's DB client cert (role max: 72h); renewed by the agent
+  serverCertTTL: 720h  # Postgres's cert (role max: 720h); picked up on pod restart
+
+ingress:
+  enabled: true
+  className: nginx
+  host: mie-dev.local

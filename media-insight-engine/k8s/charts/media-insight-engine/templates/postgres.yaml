@@ -1,0 +1,82 @@
+{{- $full := include "mie.fullname" . -}}
+{{- $env := .Values.env -}}
+{{- $ns := .Release.Namespace -}}
+# Postgres + pgvector. The Vault agent (service account mie-postgres) writes into /vault/secrets/:
+#   server.pem  server cert + key (DNS: postgres, postgres.<ns>.svc...), used as ssl_cert_file and ssl_key_file
+#   ca.crt      Vault's CA, to verify the app's client certs
+#   pgpass      POSTGRES_PASSWORD from secret/mie/<env>/postgres
+# ponytail: Postgres reads its cert only at start; the agent renews the file, a pod restart picks it up.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $full }}-postgres
+  labels: {{- include "mie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: {{- include "mie.selector" (list . "postgres") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "mie.selector" (list . "postgres") | nindent 8 }}
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/agent-run-as-same-user: "true"    # uid 999, so Postgres accepts the key's owner
+        vault.hashicorp.com/role: mie-{{ $env }}-postgres
+        vault.hashicorp.com/agent-inject-secret-server.pem: pki/issue/mie-{{ $env }}-db-server
+        vault.hashicorp.com/agent-inject-perms-server.pem: "0600"
+        vault.hashicorp.com/agent-inject-template-server.pem: |
+          {{`{{- with secret "pki/issue/mie-`}}{{ $env }}{{`-db-server" "common_name=postgres" "alt_names=postgres.`}}{{ $ns }}{{`.svc,postgres.`}}{{ $ns }}{{`.svc.cluster.local" "ttl=`}}{{ .Values.vault.serverCertTTL }}{{`" -}}
+          {{ .Data.certificate }}
+          {{ .Data.issuing_ca }}
+          {{ .Data.private_key }}
+          {{- end }}`}}
+        vault.hashicorp.com/agent-inject-secret-ca.crt: pki/cert/ca
+        vault.hashicorp.com/agent-inject-template-ca.crt: |
+          {{`{{- with secret "pki/cert/ca" -}}{{ .Data.certificate }}{{- end }}`}}
+        vault.hashicorp.com/agent-inject-secret-pgpass: secret/data/mie/{{ $env }}/postgres
+        vault.hashicorp.com/agent-inject-perms-pgpass: "0400"
+        vault.hashicorp.com/agent-inject-template-pgpass: |
+          {{`{{- with secret "secret/data/mie/`}}{{ $env }}{{`/postgres" -}}{{ .Data.data.POSTGRES_PASSWORD }}{{- end }}`}}
+    spec:
+      serviceAccountName: mie-postgres
+      securityContext: { fsGroup: 999 }
+      containers:
+        - name: postgres
+          image: {{ include "mie.image" (list . .Values.postgres.image) }}
+          imagePullPolicy: {{ .Values.postgres.image.pullPolicy }}
+          securityContext: { runAsUser: 999, runAsGroup: 999 }
+          args:
+            - -c
+            - ssl=on
+            - -c
+            - ssl_cert_file=/vault/secrets/server.pem
+            - -c
+            - ssl_key_file=/vault/secrets/server.pem
+            - -c
+            - ssl_ca_file=/vault/secrets/ca.crt
+            - -c
+            - hba_file=/etc/postgres/pg_hba.conf
+          env:
+            - { name: POSTGRES_DB, value: mie }
+            - { name: POSTGRES_USER, value: mie }
+            - { name: POSTGRES_PASSWORD_FILE, value: /vault/secrets/pgpass }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports:
+            - { name: postgres, containerPort: 5432 }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "mie", "-d", "mie"] }
+            periodSeconds: 5
+          resources: {{- toYaml .Values.postgres.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: hba, mountPath: /etc/postgres, readOnly: true }
+      volumes:
+        - name: hba
+          configMap: { name: {{ $full }}-postgres-hba }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: {{ .Values.postgres.storage }} } }
