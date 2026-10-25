@@ -1,0 +1,14 @@
+# Fixed names, so one release per namespace: the client image's nginx proxies /api to "server:8003", and
+# the Vault PKI role only issues Postgres certs for "postgres[.<ns>.svc...]".
+{{- range $name, $port := dict "server" 8003 "client" 80 "postgres" 5432 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels: {{- include "mie.labels" $ | nindent 4 }}
+spec:
+  selector: {{- include "mie.selector" (list $ $name) | nindent 4 }}
+  ports:
+    - { name: {{ if eq $name "postgres" }}postgres{{ else }}http{{ end }}, port: {{ $port }}, targetPort: {{ if eq $name "postgres" }}postgres{{ else }}http{{ end }} }
+{{- end }}

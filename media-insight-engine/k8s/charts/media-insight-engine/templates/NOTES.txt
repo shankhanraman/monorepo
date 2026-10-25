@@ -1,0 +1,16 @@
+media-insight-engine {{ .Chart.AppVersion | trunc 7 }} is installed as "{{ .Release.Name }}" in {{ .Release.Namespace }} (Vault env: {{ .Values.env }}).
+
+Watch it start (the server waits for Postgres, so it may restart once):
+  kubectl -n {{ .Release.Namespace }} get pods -w
+
+Open the app:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/client 8080:80   →  http://localhost:8080
+{{- if .Values.ingress.enabled }}
+  or minikube tunnel + hosts entry "127.0.0.1 {{ .Values.ingress.host }}"  →  http://{{ .Values.ingress.host }}
+{{- end }}
+
+Logs:
+  kubectl -n {{ .Release.Namespace }} logs deployment/{{ include "mie.fullname" . }}-server -c server
+  kubectl -n {{ .Release.Namespace }} logs deployment/{{ include "mie.fullname" . }}-server -c vault-agent
+
+If pods hang in Init with "permission denied" from Vault, run scripts/vault-bootstrap.sh {{ .Values.env }} first.

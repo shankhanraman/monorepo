@@ -1,0 +1,79 @@
+{{- $full := include "mie.fullname" . -}}
+{{- $env := .Values.env -}}
+# FastAPI server. The Vault agent (service account mie-server) writes into /vault/secrets/:
+#   app.env        export lines from secret/mie/<env>/app (your .env), sourced by the command below
+#   db-client.pem  client cert + CA + key from one issue call (CN=mie), renewed automatically
+#   ca.crt         Vault's CA, to verify the Postgres server cert
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-server
+  labels: {{- include "mie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  replicas: 1                 # ingest jobs run inside the process; a second replica would resume the same jobs
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: {{- include "mie.selector" (list . "server") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "mie.selector" (list . "server") | nindent 8 }}
+      annotations:
+        # Roll the pod when the settings, collections, lenses, prompts or golden files change
+        checksum/config: {{ include (print $.Template.BasePath "/configmaps.yaml") . | sha256sum }}
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: mie-{{ $env }}-server
+        vault.hashicorp.com/agent-inject-secret-app.env: secret/data/mie/{{ $env }}/app
+        vault.hashicorp.com/agent-inject-perms-app.env: "0400"
+        vault.hashicorp.com/agent-inject-template-app.env: |
+          {{`{{- with secret "secret/data/mie/`}}{{ $env }}{{`/app" -}}
+          {{- range $k, $v := .Data.data }}
+          export {{ $k }}='{{ $v | replaceAll "'" "'\\''" }}'
+          {{- end }}
+          {{- end }}`}}
+        vault.hashicorp.com/agent-inject-secret-db-client.pem: pki/issue/mie-{{ $env }}-db-client
+        vault.hashicorp.com/agent-inject-perms-db-client.pem: "0600"   # libpq refuses a group/world-readable key
+        vault.hashicorp.com/agent-inject-template-db-client.pem: |
+          {{`{{- with secret "pki/issue/mie-`}}{{ $env }}{{`-db-client" "common_name=mie" "ttl=`}}{{ .Values.vault.clientCertTTL }}{{`" -}}
+          {{ .Data.certificate }}
+          {{ .Data.issuing_ca }}
+          {{ .Data.private_key }}
+          {{- end }}`}}
+        vault.hashicorp.com/agent-inject-secret-ca.crt: pki/cert/ca
+        vault.hashicorp.com/agent-inject-template-ca.crt: |
+          {{`{{- with secret "pki/cert/ca" -}}{{ .Data.certificate }}{{- end }}`}}
+    spec:
+      serviceAccountName: mie-server
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: server
+          image: {{ include "mie.image" (list . .Values.server.image) }}
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          command: ["sh", "-c", ". /vault/secrets/app.env && exec uvicorn app.main:app --host 0.0.0.0 --port 8003"]
+          envFrom:
+            - configMapRef: { name: {{ $full }}-server-env }
+          ports:
+            - { name: http, containerPort: 8003 }
+          readinessProbe:               # /health also checks the database (so: the TLS client-cert login)
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          livenessProbe:                # TCP only: a database blip shouldn't restart the server mid-transcription
+            tcpSocket: { port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources: {{- toYaml .Values.server.resources | nindent 12 }}
+          volumeMounts:
+            - { name: collections, mountPath: /config/collections, readOnly: true }
+            - { name: lenses, mountPath: /config/lenses, readOnly: true }
+            - { name: prompts, mountPath: /prompts, readOnly: true }
+            - { name: golden, mountPath: /golden, readOnly: true }
+            - { name: shm, mountPath: /dev/shm }
+      volumes:
+        {{- range list "collections" "lenses" "prompts" "golden" }}
+        - name: {{ . }}
+          configMap: { name: {{ $full }}-{{ . }} }
+        {{- end }}
+        - name: shm                     # headless Chromium (Crawl4AI) needs shared memory
+          emptyDir: { medium: Memory, sizeLimit: 1Gi }
