@@ -1,0 +1,23 @@
+apiVersion: v1
+entries:
+  media-insight-engine:
+  - apiVersion: v2
+    appVersion: a7a0a4005b66d7764d02a1e6129997d54fccbbe2
+    created: "2026-10-25T17:21:23.265677217Z"
+    description: Admissions Media Insight Engine (FastAPI server, React client, Postgres
+      + pgvector) with secrets and DB certificates from Vault
+    digest: ab4483939d3c8302a597ce99ab4704459416f58080d1ec8703b5e93cbbe4f6b5
+    home: https://github.com/shankhanraman/monorepo/tree/main/media-insight-engine
+    keywords:
+    - fastapi
+    - pgvector
+    - vault
+    - rag
+    name: media-insight-engine
+    sources:
+    - https://github.com/shankhanraman/monorepo
+    type: application
+    urls:
+    - https://github.com/shankhanraman/monorepo/releases/download/media-insight-engine-0.1.0/media-insight-engine-0.1.0.tgz
+    version: 0.1.0
+generated: "2026-10-25T17:21:23.265682114Z"
