@@ -1,0 +1,14 @@
+# Golden test set (PRD AC-11): AJ supplies 10 questions with the moment that should be cited.
+# Run after every prompt / segment / retrieval change:  make golden COLLECTION=yale
+# Target: at least 8 of 10 cite the expected source within the tolerance.
+#
+# expected_url: the source URL as written in yale.yaml
+# expected_t:   seconds into the video (omit for web pages: any section of that page counts)
+tolerance_s: 60
+questions:
+  - question: What does Yale look for in the why-this-major short answer?
+    expected_url: TODO
+    expected_t: 0
+  # - question: Is the SAT/ACT required and how much does it matter?
+  #   expected_url: https://www.youtube.com/watch?v=VIDEO_ID
+  #   expected_t: 720

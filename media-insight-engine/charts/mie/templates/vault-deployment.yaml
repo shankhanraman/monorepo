@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mie.fullname" . }}-vault
+  labels:
+    {{- include "mie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vault
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: vault
+  template:
+    metadata:
+      labels:
+        {{- include "mie.labels" . | nindent 8 }}
+        app.kubernetes.io/component: vault
+    spec:
+      containers:
+        - name: vault
+          image: {{ .Values.vault.image | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          args: ["server", "-dev"]
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
+          env:
+            - name: VAULT_DEV_ROOT_TOKEN_ID
+              value: {{ .Values.vault.devRootToken | quote }}
+            - name: VAULT_DEV_LISTEN_ADDRESS
+              value: "0.0.0.0:8200"
+            # So the in-container `vault` CLI (readiness probe) talks to this dev server.
+            - name: VAULT_ADDR
+              value: "http://127.0.0.1:8200"
+          ports:
+            - name: http
+              containerPort: 8200
+          readinessProbe:
+            exec:
+              command: ["vault", "status", "-address=http://127.0.0.1:8200"]
+            initialDelaySeconds: 2
+            periodSeconds: 3
+            failureThreshold: 20

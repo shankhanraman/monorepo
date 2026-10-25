@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mie.fullname" . }}-db
+  labels:
+    {{- include "mie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: db
+spec:
+  serviceName: db
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: db
+  template:
+    metadata:
+      labels:
+        {{- include "mie.labels" . | nindent 8 }}
+        app.kubernetes.io/component: db
+    spec:
+      initContainers:
+        # Vault-as-source: pull the server bundle, place it where Postgres expects it.
+        # Runs as root to chown the key to the postgres uid (999 in the pgvector image).
+        - name: cert-pull
+          image: {{ .Values.vault.image | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          securityContext:
+            runAsUser: 0
+          env:
+            - name: VAULT_ADDR
+              value: "http://vault:8200"
+            - name: VAULT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mie.fullname" . }}-secrets
+                  key: VAULT_DB_TOKEN
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "waiting for vault db-server bundle"
+              until vault kv get -field=server.crt secret/mie/db-server >/dev/null 2>&1; do sleep 2; done
+              vault kv get -field=ca.crt     secret/mie/db-server > /certs/ca.crt
+              vault kv get -field=server.crt secret/mie/db-server > /certs/server.crt
+              vault kv get -field=server.key secret/mie/db-server > /certs/server.key
+              chown 999:999 /certs/server.key
+              chmod 600 /certs/server.key
+              chmod 644 /certs/ca.crt /certs/server.crt
+              echo "server bundle placed"
+          volumeMounts:
+            - name: pgcerts
+              mountPath: /certs
+      containers:
+        - name: db
+          image: {{ .Values.db.image | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          args:
+            - postgres
+            - -c
+            - ssl=on
+            - -c
+            - ssl_cert_file=/etc/postgres/certs/server.crt
+            - -c
+            - ssl_key_file=/etc/postgres/certs/server.key
+            - -c
+            - ssl_ca_file=/etc/postgres/certs/ca.crt
+            - -c
+            - hba_file=/etc/postgres/pg_hba.conf
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.db.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.db.user | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mie.fullname" . }}-secrets
+                  key: POSTGRES_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          volumeMounts:
+            - name: pgcerts
+              mountPath: /etc/postgres/certs
+            - name: pg-hba
+              mountPath: /etc/postgres/pg_hba.conf
+              subPath: pg_hba.conf
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.db.user | quote }}, "-d", {{ .Values.db.database | quote }}]
+            initialDelaySeconds: 5
+            periodSeconds: 3
+            failureThreshold: 20
+      volumes:
+        - name: pgcerts
+          emptyDir: {}
+        - name: pg-hba
+          configMap:
+            name: {{ include "mie.fullname" . }}-pg-hba
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.db.storage | quote }}

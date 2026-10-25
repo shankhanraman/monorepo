@@ -26,6 +26,36 @@ Open **http://localhost:5176**.
 | 8003 | API (`/docs` for Swagger) |
 | 5437 | Postgres |
 
+## Run it on Kubernetes (Helm, local dev)
+
+For a kind cluster instead of Compose. The chart ([charts/mie/](charts/mie/)) reproduces the
+full stack — Vault + mutual-TLS Postgres, server, client — and is **local-dev only** (dev Vault,
+no TLS ingress, no HA). Design: [docs/superpowers/specs/2026-10-24-helm-chart-design.md](docs/superpowers/specs/2026-10-24-helm-chart-design.md).
+
+Prerequisites: a running kind cluster with a `localhost:5000` registry, plus `helm` and `kubectl`.
+
+```bash
+# 1. secrets (gitignored) — copy the example and fill in your Anthropic key + a DB password
+cp charts/mie/values-local.yaml.example charts/mie/values-local.yaml
+
+# 2. build the app images and push them to the local registry
+make helm-images
+
+# 3. install (runs helm-sync to copy config/prompts/golden into the chart, then helm upgrade --install)
+make helm-install
+
+# 4. reach the UI
+kubectl port-forward svc/mie-mie-client 8080:80   # then open http://localhost:8080
+```
+
+`make helm-lint` renders the chart without a cluster (`helm lint` + `helm template`). Sync a
+collection with `kubectl exec deploy/mie-mie-server -- python -m app.sync yale`. Vault runs in
+dev mode (in-memory): if its pod restarts, re-run the `cert-init` Job — see the install `NOTES`.
+
+**Windows (no `make`):** the chart's `files/` are committed, so you can skip `helm-sync` and run
+helm directly: `helm upgrade --install mie charts/mie -f charts/mie/values-local.yaml` (build/push
+the images first with the two `docker build … && docker push …` lines from the `helm-images` target).
+
 ## Add sources and sync (PRD FR-1)
 
 Edit one file per college in [config/collections/](config/collections/) (`yale.yaml`, `mit.yaml`, …). The shared Lens is in [config/lenses/](config/lenses/).

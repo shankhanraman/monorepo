@@ -1,0 +1,21 @@
+name: undergrad-admissions
+domain: Undergraduate college admissions in the US (Ivy+ schools)
+reader_role: A counselor helping a high-school student apply
+focus: >
+  What admissions officers say they look for. Essays and supplements (especially the
+  "why this major" and "why us" short answers), testing policy (SAT/ACT), choosing and
+  explaining an intended major, Early Action / Early Decision strategy, activities,
+  recommendations, interviews and financial aid.
+tags:
+  - testing
+  - essays
+  - why-major
+  - why-us
+  - ea-ed
+  - extracurriculars
+  - recommendations
+  - interviews
+  - financial-aid
+  - academics
+segment_seconds: 60
+stale_after_months: 18

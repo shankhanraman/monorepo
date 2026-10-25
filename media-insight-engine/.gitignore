@@ -16,3 +16,6 @@ dist/
 *.crt
 *.csr
 *.srl
+
+# Helm: local secret overrides (ANTHROPIC_API_KEY / POSTGRES_PASSWORD) — never commit
+charts/mie/values-local.yaml

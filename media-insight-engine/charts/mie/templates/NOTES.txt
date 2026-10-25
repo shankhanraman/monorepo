@@ -1,0 +1,33 @@
+Media Insight Engine ({{ .Release.Name }}) is installing into namespace "{{ .Release.Namespace }}".
+
+Startup order (enforced by polling init-containers, no Helm hooks):
+  vault -> cert-init Job (seeds both cert bundles + mints tokens) -> db -> server -> client
+
+Watch it come up:
+  kubectl -n {{ .Release.Namespace }} get pods -w
+
+Reach the UI (nginx proxies /api/ -> the server):
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "mie.fullname" . }}-client 8080:80
+  # then open http://localhost:8080
+
+{{- if .Values.ingress.enabled }}
+
+Ingress is enabled at: http://{{ .Values.ingress.host }}/
+  (add "{{ .Values.ingress.host }}" to /etc/hosts -> your ingress controller IP)
+{{- end }}
+
+Add sources and sync a collection (e.g. yale):
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "mie.fullname" . }}-server -- python -m app.sync yale
+
+KNOWN LIMITATION — Vault runs in dev mode (in-memory). If the vault pod restarts, the
+seed is lost and running db/server pods can no longer authenticate. Recover by re-running
+cert-init and restarting the dependents:
+  kubectl -n {{ .Release.Namespace }} delete job {{ include "mie.fullname" . }}-cert-init
+  helm upgrade {{ .Release.Name }} <chart> -n {{ .Release.Namespace }} --reuse-values
+  kubectl -n {{ .Release.Namespace }} rollout restart statefulset/{{ include "mie.fullname" . }}-db deploy/{{ include "mie.fullname" . }}-server
+
+The cert-init Job installs openssl via `apk add` at startup, so the cluster needs egress to the
+Alpine package repos (same as the Compose setup). On an air-gapped cluster, bake openssl into a
+custom vault image instead.
+
+This chart is for LOCAL DEV parity only — not production (dev Vault, no TLS ingress, no HA).

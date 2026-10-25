@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mie.fullname" . }}-client
+  labels:
+    {{- include "mie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: client
+  template:
+    metadata:
+      labels:
+        {{- include "mie.labels" . | nindent 8 }}
+        app.kubernetes.io/component: client
+    spec:
+      containers:
+        - name: client
+          # The prod (nginx) image: serves the built app and proxies /api/ -> http://server:8003/.
+          image: {{ include "mie.image" (dict "root" . "repo" .Values.images.client) | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 5

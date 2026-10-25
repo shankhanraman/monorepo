@@ -1,0 +1,17 @@
+# One file per college (PRD FR-1). Edit, then: make sync COLLECTION=duke
+#   (Windows: docker compose exec server python -m app.sync duke)
+# URLs verified on 2026-10-11 (HTTP 200; PDFs checked for a real %PDF header).
+name: Duke
+lens: undergrad-admissions
+focus_note: Early Action, class of 2031
+sources:
+  # AJ: add admissions YouTube videos / podcast feeds here, e.g.
+  # - url: https://www.youtube.com/watch?v=VIDEO_ID
+
+  - url: https://admissions.duke.edu/apply/
+    label: "Duke apply (essays, supplements, testing)"
+    priority: high
+  - url: https://admissions.duke.edu/what-we-look-for/
+    label: "Duke: what we look for"
+  - url: https://ir.provost.duke.edu/sites/default/files/CDS_PDF_2025-2026-20260622-website-published-version.pdf
+    label: "Duke Common Data Set 2025-26"

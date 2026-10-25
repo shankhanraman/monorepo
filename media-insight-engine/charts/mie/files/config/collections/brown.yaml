@@ -1,0 +1,19 @@
+# One file per college (PRD FR-1). Edit, then: make sync COLLECTION=brown
+#   (Windows: docker compose exec server python -m app.sync brown)
+# URLs verified on 2026-10-11 (HTTP 200; PDFs checked for a real %PDF header).
+name: Brown
+lens: undergrad-admissions
+focus_note: Early Action, class of 2031
+sources:
+  # AJ: add admissions YouTube videos / podcast feeds here, e.g.
+  # - url: https://www.youtube.com/watch?v=VIDEO_ID
+
+  - url: https://admission.brown.edu/first-year/application-checklist
+    label: "Brown application checklist"
+    priority: high
+  - url: https://admission.brown.edu/first-year/standardized-tests
+    label: "Brown standardized tests"
+  - url: https://admission.brown.edu/ask/admission-process
+    label: "Brown admission process"
+
+  # Common Data Set: Brown only publishes it as an embedded Tableau view (no PDF).

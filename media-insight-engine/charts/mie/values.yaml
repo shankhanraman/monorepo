@@ -1,0 +1,48 @@
+# Media Insight Engine — local dev chart values.
+# Deploys to a kind cluster. App images are built + pushed to a localhost:5000 registry
+# (see `make helm-images`). Secrets are supplied at install time, never committed.
+
+images:
+  # Registry that holds the app images. For kind + a localhost:5000 registry this is
+  # reachable from nodes as "localhost:5000". Leave empty to pull from Docker Hub-style names.
+  registry: localhost:5000
+  server:
+    repository: mie-server
+    tag: latest
+  client:
+    repository: mie-client
+    tag: latest
+  pullPolicy: IfNotPresent
+
+vault:
+  image: hashicorp/vault:1.18
+  # Dev-mode root token. In-memory, auto-unsealed — LOCAL DEV ONLY.
+  devRootToken: root
+
+db:
+  image: pgvector/pgvector:pg17
+  storage: 2Gi
+  database: mie
+  user: mie
+
+server:
+  # Extra env passed through to the server container (e.g. WHISPER_MODEL, INGEST_WORKERS).
+  env: {}
+  # Shared memory for headless Chromium (Crawl4AI). Compose uses shm_size: 1gb.
+  shmSize: 1Gi
+
+secrets:
+  # REQUIRED at install: --set secrets.anthropicApiKey=... or a gitignored values-local.yaml
+  anthropicApiKey: ""
+  # REQUIRED at install: initializes Postgres + serves the non-TLS fallback path.
+  postgresPassword: ""
+  # Fixed-id Vault tokens minted by cert-init. The server app uses vaultServerToken
+  # (policy mie-db -> reads db-client); the db init-container uses vaultDbToken
+  # (policy mie-pg -> reads db-server). Names are intentionally counter-intuitive.
+  vaultServerToken: mie-server-tok
+  vaultDbToken: mie-db-tok
+
+ingress:
+  enabled: false
+  className: ""
+  host: mie.local

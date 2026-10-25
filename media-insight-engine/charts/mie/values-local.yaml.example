@@ -1,0 +1,8 @@
+# Copy to values-local.yaml (gitignored) and fill in. Used by `make helm-install`.
+secrets:
+  anthropicApiKey: sk-ant-...     # required
+  postgresPassword: change-me     # required
+
+# Override the registry if you are not using a kind-local localhost:5000 registry.
+# images:
+#   registry: localhost:5000

@@ -1,0 +1,13 @@
+apiVersion: v2
+name: mie
+description: Media Insight Engine — full local-dev stack (Vault + mTLS Postgres + FastAPI + React) for a kind cluster
+type: application
+version: 0.1.0
+appVersion: "day2"
+home: https://github.com/shankhanraman/monorepo
+keywords:
+  - media-insight-engine
+  - fastapi
+  - postgres
+  - pgvector
+  - vault

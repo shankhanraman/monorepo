@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mie.fullname" . }}-pg-hba
+  labels:
+    {{- include "mie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: db
+data:
+  pg_hba.conf: |-
+{{ .Files.Get "files/pg_hba.conf" | indent 4 }}

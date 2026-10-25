@@ -1,0 +1,44 @@
+{{/*
+ConfigMap keys cannot contain "/", so the server's input tree is split into one ConfigMap
+per target directory. Each is mounted at the matching path (config/ has two subdirs, which
+a single ConfigMap could not recreate). Files are copied into files/ by `make helm-sync`.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mie.fullname" . }}-collections
+  labels:
+    {{- include "mie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+data:
+{{ (.Files.Glob "files/config/collections/*.yaml").AsConfig | indent 2 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mie.fullname" . }}-lenses
+  labels:
+    {{- include "mie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+data:
+{{ (.Files.Glob "files/config/lenses/*.yaml").AsConfig | indent 2 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mie.fullname" . }}-prompts
+  labels:
+    {{- include "mie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+data:
+{{ (.Files.Glob "files/prompts/*.md").AsConfig | indent 2 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mie.fullname" . }}-golden
+  labels:
+    {{- include "mie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+data:
+{{ (.Files.Glob "files/golden/*.yaml").AsConfig | indent 2 }}

@@ -1,0 +1,140 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mie.fullname" . }}-server
+  labels:
+    {{- include "mie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  replicas: 1   # background work runs in-process; keep a single replica (README "known limits")
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        {{- include "mie.labels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+    spec:
+      initContainers:
+        # Gate startup on the client bundle being seeded, then on Postgres accepting connections.
+        # Polling (not a Helm hook) so it survives Vault being re-seeded after a restart.
+        # Two containers run in order: the DB wait uses pg_isready on the postgres image to avoid
+        # busybox nc's unreliable -z flag.
+        - name: wait-vault
+          image: {{ .Values.vault.image | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          env:
+            - name: VAULT_ADDR
+              value: "http://vault:8200"
+            - name: VAULT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mie.fullname" . }}-secrets
+                  key: VAULT_SERVER_TOKEN
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until vault kv get -field=client.crt secret/mie/db-client >/dev/null 2>&1; do
+                echo "waiting for vault db-client"; sleep 2; done
+              echo "db-client bundle ready"
+        - name: wait-db
+          image: {{ .Values.db.image | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - 'until pg_isready -h db -p 5432 -U {{ .Values.db.user }}; do echo "waiting for postgres"; sleep 2; done'
+      containers:
+        - name: server
+          image: {{ include "mie.image" (dict "root" . "repo" .Values.images.server) | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          # No restrictive securityContext: the image runs as root and secrets.py
+          # mkdir/chmod 0700 the cert dir and writes keys 0600 there.
+          env:
+            - name: DB_AUTH
+              value: "cert"
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.db.user }}@db:5432/{{ .Values.db.database }}"
+            - name: VAULT_ADDR
+              value: "http://vault:8200"
+            - name: VAULT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mie.fullname" . }}-secrets
+                  key: VAULT_SERVER_TOKEN
+            - name: VAULT_DB_CERT_PATH
+              value: "mie/db-client"
+            - name: DB_CERT_DIR
+              value: "/run/mie-certs"
+            - name: CONFIG_DIR
+              value: "/config"
+            - name: PROMPTS_DIR
+              value: "/prompts"
+            - name: GOLDEN_DIR
+              value: "/golden"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mie.fullname" . }}-secrets
+                  key: ANTHROPIC_API_KEY
+            {{- range $k, $v := .Values.server.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8003
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8003
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            # Shallow: /health runs SELECT 1, so a transient DB blip must not restart the server.
+            # A TCP check just confirms the uvicorn process is alive. (Readiness uses /health.)
+            tcpSocket:
+              port: 8003
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          volumeMounts:
+            - name: certs
+              mountPath: /run/mie-certs
+            - name: dshm
+              mountPath: /dev/shm
+            - name: collections
+              mountPath: /config/collections
+              readOnly: true
+            - name: lenses
+              mountPath: /config/lenses
+              readOnly: true
+            - name: prompts
+              mountPath: /prompts
+              readOnly: true
+            - name: golden
+              mountPath: /golden
+              readOnly: true
+      volumes:
+        - name: certs
+          emptyDir:
+            medium: Memory   # client key/cert live in RAM, never on disk (compose tmpfs parity)
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ .Values.server.shmSize }}   # headless Chromium (Crawl4AI) needs big /dev/shm
+        - name: collections
+          configMap:
+            name: {{ include "mie.fullname" . }}-collections
+        - name: lenses
+          configMap:
+            name: {{ include "mie.fullname" . }}-lenses
+        - name: prompts
+          configMap:
+            name: {{ include "mie.fullname" . }}-prompts
+        - name: golden
+          configMap:
+            name: {{ include "mie.fullname" . }}-golden

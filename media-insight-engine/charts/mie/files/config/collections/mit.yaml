@@ -1,0 +1,21 @@
+# One file per college (PRD FR-1). Edit, then: make sync COLLECTION=mit
+#   (Windows: docker compose exec server python -m app.sync mit)
+# URLs verified on 2026-10-11 (HTTP 200; PDFs checked for a real %PDF header).
+name: MIT
+lens: undergrad-admissions
+focus_note: Early Action, class of 2031
+sources:
+  # AJ: add admissions YouTube videos / podcast feeds here, e.g.
+  # - url: https://www.youtube.com/watch?v=VIDEO_ID
+
+  - url: https://mitadmissions.org/apply/firstyear/essays-activities-academics/
+    label: "MIT essays, activities & academics"
+    priority: high
+  - url: https://mitadmissions.org/blogs/entry/a-protocol-for-mit-admissions-essays/
+    label: "MIT blog – a protocol for admissions essays"
+  - url: https://mitadmissions.org/apply/firstyear/tests-scores/
+    label: "MIT tests & scores"
+  - url: https://mitadmissions.org/apply/process/what-we-look-for/
+    label: "MIT: what we look for"
+
+  # Common Data Set: MIT publishes it as HTML (ir.mit.edu), not as a PDF.

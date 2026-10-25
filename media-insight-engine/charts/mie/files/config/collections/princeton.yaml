@@ -1,0 +1,19 @@
+# One file per college (PRD FR-1). Edit, then: make sync COLLECTION=princeton
+#   (Windows: docker compose exec server python -m app.sync princeton)
+# URLs verified on 2026-10-11 (HTTP 200; PDFs checked for a real %PDF header).
+name: Princeton
+lens: undergrad-admissions
+focus_note: Early Action, class of 2031
+sources:
+  # AJ: add admissions YouTube videos / podcast feeds here, e.g.
+  # - url: https://www.youtube.com/watch?v=VIDEO_ID
+
+  - url: https://admission.princeton.edu/apply/princeton-specific-questions
+    label: "Princeton-specific questions"
+    priority: high
+  - url: https://admission.princeton.edu/apply/standardized-testing
+    label: "Princeton standardized testing"
+  - url: https://admission.princeton.edu/apply/before-you-apply/helpful-tips
+    label: "Princeton helpful tips"
+
+  # Common Data Set: ir.princeton.edu blocks automated downloads (Cloudflare challenge), so it is not listed.

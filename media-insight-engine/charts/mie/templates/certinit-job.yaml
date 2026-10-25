@@ -1,0 +1,59 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "mie.fullname" . }}-cert-init
+  labels:
+    {{- include "mie.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cert-init
+spec:
+  backoffLimit: 20
+  template:
+    metadata:
+      labels:
+        {{- include "mie.labels" . | nindent 8 }}
+        app.kubernetes.io/component: cert-init
+    spec:
+      restartPolicy: OnFailure
+      # Needs root to `apk add openssl` on the vault image.
+      securityContext:
+        runAsUser: 0
+      initContainers:
+        # Wait for the dev Vault to be unsealed before seeding.
+        - name: wait-vault
+          image: {{ .Values.vault.image | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          env:
+            - name: VAULT_ADDR
+              value: "http://vault:8200"
+          command:
+            - /bin/sh
+            - -c
+            - 'until vault status >/dev/null 2>&1; do echo "waiting for vault"; sleep 2; done'
+      containers:
+        - name: cert-init
+          image: {{ .Values.vault.image | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["/bin/sh", "/scripts/cert-init-k8s.sh"]
+          env:
+            - name: VAULT_ADDR
+              value: "http://vault:8200"
+            - name: VAULT_TOKEN
+              value: {{ .Values.vault.devRootToken | quote }}
+            - name: SERVER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mie.fullname" . }}-secrets
+                  key: VAULT_SERVER_TOKEN
+            - name: DB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mie.fullname" . }}-secrets
+                  key: VAULT_DB_TOKEN
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: script
+          configMap:
+            name: {{ include "mie.fullname" . }}-certinit
