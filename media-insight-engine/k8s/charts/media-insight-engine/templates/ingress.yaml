@@ -1,0 +1,21 @@
+{{- if .Values.ingress.enabled }}
+# Everything goes to the client; its nginx serves the app and proxies /api/* to the server.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "mie.fullname" . }}
+  labels: {{- include "mie.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"   # long Q&A / question-bank runs
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: client, port: { name: http } }
+{{- end }}

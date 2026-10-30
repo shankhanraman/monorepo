@@ -18,6 +18,20 @@ kubectl --context mie -n mie-dev port-forward svc/client 8080:80
 ```
 Open **http://localhost:8080**. Health: `curl localhost:8080/api/health` → `{"status":"ok","whisper":"cpu"}`.
 
+## Or with Helm
+The same app is also a Helm chart, [charts/media-insight-engine](charts/media-insight-engine/README.md),
+published on every chart version bump to the Helm repo on GitHub Pages. It needs the same prerequisites
+(`scripts/minikube-up.sh` for Vault, `scripts/vault-bootstrap.sh <env>`). Use Helm **or** Kustomize per
+namespace, not both: they share the Service names.
+```bash
+helm repo add mie https://shankhanraman.github.io/monorepo
+helm repo update
+helm search repo mie
+helm install mie mie/media-insight-engine -n mie-test --create-namespace -f overlays/test/values.yaml
+kubectl --context mie -n mie-test logs deployment/mie-media-insight-engine-server -c server
+```
+From source, with the minikube-built `:dev` images: `scripts/chart-files.sh && helm upgrade --install mie charts/media-insight-engine -n mie-dev --create-namespace -f overlays/dev/values.yaml`.
+
 Sync a collection: the **Sync** button in the app, or
 `kubectl --context mie -n mie-dev exec deploy/server -c server -- sh -c '. /vault/secrets/app.env && python -m app.sync yale'`.
 

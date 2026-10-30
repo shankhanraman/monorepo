@@ -1,0 +1,42 @@
+{{- $full := include "mie.fullname" . -}}
+# Non-secret server settings. Secrets (and .env overrides) come from Vault as /vault/secrets/app.env.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-server-env
+  labels: {{- include "mie.labels" . | nindent 4 }}
+data:
+  # TLS client-cert login with the files the Vault agent writes and renews. DB_AUTH=password means
+  # "use DATABASE_URL as is" (the app's own Vault fetch is the Docker Compose path).
+  DATABASE_URL: "postgresql://mie@postgres:5432/mie?sslmode=verify-full&sslrootcert=/vault/secrets/ca.crt&sslcert=/vault/secrets/db-client.pem&sslkey=/vault/secrets/db-client.pem"
+  DB_AUTH: password
+  CONFIG_DIR: /config
+  PROMPTS_DIR: /prompts
+  GOLDEN_DIR: /golden
+  {{- range $k, $v := .Values.server.env }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+---
+# Only hostssl: the app logs in with its Vault-issued client cert (CN must be "mie"); admins with a
+# password, but still over TLS. First matching line wins.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-postgres-hba
+  labels: {{- include "mie.labels" . | nindent 4 }}
+data:
+  pg_hba.conf: |
+    local    all  all       trust
+    hostssl  mie  mie  all  cert clientcert=verify-full
+    hostssl  all  all  all  scram-sha-256
+{{- /* The app's config/, prompts/ and golden/ folders, copied into files/ by scripts/chart-files.sh
+       (and by the release workflow, so a published chart carries them). */}}
+{{- range $name, $glob := dict "collections" "files/config/collections/*" "lenses" "files/config/lenses/*" "prompts" "files/prompts/*" "golden" "files/golden/*" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-{{ $name }}
+  labels: {{- include "mie.labels" $ | nindent 4 }}
+data: {{- ($.Files.Glob $glob).AsConfig | nindent 2 }}
+{{- end }}

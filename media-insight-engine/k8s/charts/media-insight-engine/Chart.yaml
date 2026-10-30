@@ -1,0 +1,13 @@
+apiVersion: v2
+name: media-insight-engine
+description: Admissions Media Insight Engine (FastAPI server, React client, Postgres + pgvector) with secrets and DB certificates from Vault
+type: application
+# Bump on every chart change: the release workflow publishes each new version to the Helm repo
+# (https://shankhanraman.github.io/monorepo) and skips versions that already exist.
+version: 0.1.0
+# Default image tag for mie-server and mie-client: a commit SHA that CI published to GHCR
+appVersion: "a7a0a4005b66d7764d02a1e6129997d54fccbbe2"
+home: https://github.com/shankhanraman/monorepo/tree/main/media-insight-engine
+sources:
+  - https://github.com/shankhanraman/monorepo
+keywords: [fastapi, pgvector, vault, rag]

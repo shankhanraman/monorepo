@@ -20,3 +20,12 @@ revert.
 
 **On EKS later:** the same overlays work. Automate step 2 with Argo CD or Flux watching this folder (GitOps),
 or add a deploy job to the workflow once the cluster is reachable from Actions (OIDC to AWS, no stored keys).
+
+## The Helm chart
+[.github/workflows/helm-release.yml](../../../.github/workflows/helm-release.yml) publishes
+`charts/media-insight-engine` when a push to `main` changes it. It uses chart-releaser: one GitHub Release per
+chart version, plus `index.yaml` on the `gh-pages` branch, served at https://shankhanraman.github.io/monorepo.
+
+To release: change the chart, **bump `version` in Chart.yaml** (and `appVersion` to a new image SHA if the images
+changed), and merge. A version that already exists is skipped. The PR workflow's `k8s` job lints the chart and
+renders the chart and the Kustomize overlays for every environment.
