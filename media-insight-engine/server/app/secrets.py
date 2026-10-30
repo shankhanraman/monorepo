@@ -16,7 +16,6 @@ from app.config import settings
 # filename in Vault/tmpfs -> psycopg/libpq conninfo parameter
 _CERT_FILES = {"ca.crt": "sslrootcert", "client.crt": "sslcert", "client.key": "sslkey"}
 
-
 def _vault_token() -> str:
     if settings.vault_token:
         return settings.vault_token
@@ -26,7 +25,6 @@ def _vault_token() -> str:
     raise RuntimeError(
         f"No Vault token: set VAULT_TOKEN or provide VAULT_TOKEN_FILE ({settings.vault_token_file})"
     )
-
 
 def _read_secret() -> dict[str, str]:
     url = f"{settings.vault_addr.rstrip('/')}/v1/secret/data/{settings.vault_db_cert_path}"
@@ -43,7 +41,6 @@ def _read_secret() -> dict[str, str]:
     if missing:
         raise RuntimeError(f"Vault secret '{settings.vault_db_cert_path}' missing keys: {missing}")
     return data
-
 
 def ensure_db_certs() -> dict[str, str]:
     """Fetch the client bundle from Vault, write it 0600 into a tmpfs dir, return psycopg ssl kwargs."""

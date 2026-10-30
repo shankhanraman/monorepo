@@ -68,7 +68,6 @@ def _dump(model: type[BaseModel], value: Any) -> Any:
         return [model.model_validate(v).model_dump(mode="json") for v in value]
     return model.model_validate(value).model_dump(mode="json")
 
-
 # ---------------------------------------------------------------- agents (the intelligence)
 
 @mcp.tool(description="Answer a question using ONLY a collection's sources, with citations and "
@@ -134,7 +133,6 @@ def get_source(source_id: int) -> dict:
 def get_sync_log(collection_id: str) -> dict:
     return _dump(SyncLog, _guard(collections_router.latest_sync_log, collection_id))
 
-
 # ---------------------------------------------------------------- management (write)
 
 @mcp.tool(description="Sync a collection from its config file: queue new/changed sources for ingest "
@@ -143,18 +141,15 @@ def get_sync_log(collection_id: str) -> dict:
 def sync_collection(collection: str) -> dict:
     return _dump(SyncLog, _guard(collections_router.sync, collection=collection))
 
-
 @mcp.tool(description="List a collection's saved question banks.")
 def list_question_banks(collection_id: str) -> list[dict]:
     return _dump(QuestionBank, _guard(banks_router.list_banks, collection_id))
-
 
 @mcp.tool(description="Create a saved question bank (a named list of questions, each 3-2000 chars). "
                       "Duplicates are removed.")
 def create_question_bank(collection_id: str, name: str, questions: list[str]) -> dict:
     body = QuestionBankCreate(name=name, questions=questions)
     return _dump(QuestionBank, _guard(banks_router.create_bank, collection_id, body))
-
 
 @mcp.tool(description="Delete a question bank by id.")
 def delete_question_bank(bank_id: int) -> dict:
@@ -171,24 +166,19 @@ def get_bank_report(run_id: int) -> str:
         raise ToolError(f"409: Run {run_id} is still running")
     return banks_service.report_markdown(run)
 
-
 @mcp.tool(description="List saved notes (pinned answers), optionally filtered to one collection.")
 def list_notes(collection: str | None = None) -> list[dict]:
     return _dump(Note, _guard(notes_router.list_notes, collection))
-
 
 @mcp.tool(description="Save a note: a pinned question/answer with its coverage, citations and an "
                       "optional comment.")
 def create_note(body: NoteCreate) -> dict:
     return _dump(Note, _guard(notes_router.create_note, body))
 
-
 @mcp.tool(description="Delete a note by id.")
 def delete_note(note_id: int) -> dict:
     _guard(notes_router.delete_note, note_id)
     return {"deleted": True, "note_id": note_id}
 
-
 # ASGI app for mounting at /mcp. streamable_http_path="/" so the mount point IS the endpoint.
-mcp_app = mcp.streamable_http_app(streamable_http_path="/")
- 
+mcp_app = mcp.streamable_http_app(streamable_http_path="/") 

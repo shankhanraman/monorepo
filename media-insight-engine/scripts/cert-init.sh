@@ -17,7 +17,6 @@ SECRET_PATH=secret/mie/db-client
 command -v openssl >/dev/null 2>&1 || { echo "[cert-init] installing openssl"; apk add --no-cache openssl >/dev/null; }
 mkdir -p "$SRC" "$PG" "$SHARED"
 
-
 #check whether the certificates already exist
 if [ ! -f "$SRC/ca.crt" ]; then
   echo "[cert-init] generating CA + server + client certificates"
@@ -26,7 +25,6 @@ if [ ! -f "$SRC/ca.crt" ]; then
   openssl req -x509 -nodes -newkey rsa:4096 -days 3650 \
   #Make the trusted authority's certificate
     -keyout "$SRC/ca.key" -out "$SRC/ca.crt" -subj "/CN=mie-dev-ca"
-
 
 #The names are called Subject Alternative Names (SANs). They help the application check that it's talking to the correct server.
   printf "subjectAltName=DNS:db,DNS:localhost\n" > /tmp/san.ext
