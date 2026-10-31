@@ -1,0 +1,4 @@
+# Shell scripts are bind-mounted into Linux containers (e.g. scripts/cert-init.sh
+# into the vault/alpine cert-init container). They must stay LF or /bin/sh breaks
+# on CRLF (set -eu\r, unterminated heredocs). Do not let autocrlf rewrite them.
+*.sh text eol=lf
